@@ -1,5 +1,20 @@
 # Listing 诊断报告
 
+## 默认简洁结论
+
+- ASIN：`ASIN_PLACEHOLDER / -`
+- 当前 Listing：展示标签 + 稳定 gate
+- 发布决策：展示标签 + 稳定 gate
+- 官方验证完整度：展示标签 + `COMPLETE / INCOMPLETE`
+- 内容质量评分：`N.N / 10` 或“未评分”，并注明“内部启发式评分，非 Amazon 官方评分”
+- 已评估维度：`N / 7`
+- 内容质量结论：展示标签 + 稳定 verdict
+- 主要原因：一个有直接 Listing 证据的理由
+- 建议行动：一个可检查完成条件的行动
+- 建议改为：仅在目标维度已评估且有产品事实来源时展示
+
+默认简洁结论不能隐藏官方 `BLOCK`、`UNKNOWN` 或 `INCOMPLETE`。需要审计证据时继续输出下列详细报告。
+
 ## 结论
 
 - 当前 Listing：`BLOCK / REVIEW / NO_KNOWN_OFFICIAL_ISSUES / NOT_EVALUATED / UNKNOWN`

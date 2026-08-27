@@ -4,14 +4,14 @@
 
 这是 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的公共 Fork，不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
-当前版本：**v1.3.0**。本版补齐真实 Amazon 属性数组适配、中英文报告、当前/候选内容隔离、完整 PTD 校验证据入口和私有 Golden Dataset 回归工具，详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前版本：**v1.3.1**。本版增加默认简洁质检结论、透明的内部 10 分制内容质量分和有证据约束的建议改写，详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 它回答三个不同问题
 
 | 层级 | 输出 | 能否参与官方发布判断 |
 |---|---|---|
 | 官方证据 | 当前 Listing、候选预检、发布决策和证据完整度 | 可以，但只限已绑定的官方证据范围 |
-| 内容质量 | 七个维度的 `STRONG / ADEQUATE / WEAK / NOT_EVALUATED` | 不参与官方门禁 |
+| 内容质量 | 七维评级及透明的内部 10 分制评分 | 不参与官方门禁 |
 | 业务表现 | `performance_verdict=NOT_EVALUATED` | 需要销量、流量、转化、退货等真实指标后另行评估 |
 
 它不会输出 Amazon 官方 CDQ 分、A9 收录分、COSMO 分或 Rufus 推荐概率，也不会用内容诊断承诺排名、流量或转化。
@@ -59,7 +59,7 @@ https://github.com/dreambird25/amazon-listing-doctor/tree/main/.agents/skills/am
 
 ## 生产使用结论
 
-v1.3.0 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。
+v1.3.1 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。
 
 无人值守自动放行仍需由接入系统补齐：完整 Draft 2019-09 + Amazon vocabulary PTD 校验、Preview 独立限流、授权提交和提交后 issues/status 对账。Amazon 明确说明 Preview 适合少量 Listing，不是高吞吐生产主链路。官方依据见 [`生产就绪研究`](docs/production-readiness-research.md)，接入门禁见 [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)。
 
@@ -87,10 +87,11 @@ python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/e
 
 ```bash
 python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown
+python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed
 python scripts/evaluate_batch.py --file private-golden-dataset.jsonl
 ```
 
-`scope.locale` 决定 Listing 校验语言；`report_locale`/`--lang` 只决定展示语言。候选 Preview 的 `PASS` 展示为“候选预检通过”，绝不写成“发布成功”。批量回归只输出聚合门禁和哈希化样本引用，不回显原始 Listing 内容。
+第一条命令默认输出简洁用户结论；`--view detailed` 输出完整审计报告。`scope.locale` 决定 Listing 校验语言；`report_locale`/`--lang` 只决定展示语言。候选 Preview 的 `PASS` 展示为“候选预检通过”，绝不写成“发布成功”。批量回归只输出聚合门禁和哈希化样本引用，不回显原始 Listing 内容。
 
 内容质量由 Agent 按固定七维契约生成，再由确定性脚本验证和合并：
 
@@ -99,6 +100,19 @@ python .agents/skills/amazon-listing-doctor/scripts/merge_report.py \
   --official-report official-report.json \
   --semantic-assessment .agents/skills/amazon-listing-doctor/examples/semantic-assessment.json
 ```
+
+默认简洁层的形态如下（占位数据）：
+
+```text
+ASIN：ASIN_PLACEHOLDER
+发布决策：需要人工复核
+内容质量评分：8.0 / 10（内部启发式评分，非 Amazon 官方评分）
+主要原因：标题没有清楚表达已经验证的容量信息。
+建议行动：重写标题并保留已验证事实。
+建议改为：Example Brand Bottle, 24 oz
+```
+
+评分规则固定为 `STRONG=10`、`ADEQUATE=7`、`WEAK=3`，只对已评估维度求平均并保留一位小数；少于五个维度有直接证据时显示“未评分”。存在适用于当前 Listing/候选的官方错误、证据异常或警告时，它优先成为首要原因与行动。精确改写必须逐项匹配已评估维度引用的产品事实，仍需通过适用 PTD 与候选预检，不能凭常识编造属性。
 
 相关契约：
 

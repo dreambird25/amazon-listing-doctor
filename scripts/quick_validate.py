@@ -34,6 +34,7 @@ REQUIRED = (
     ".agents/skills/amazon-listing-doctor/scripts/diagnose_listing.py",
     ".agents/skills/amazon-listing-doctor/scripts/merge_report.py",
     ".agents/skills/amazon-listing-doctor/scripts/render_report.py",
+    ".agents/skills/amazon-listing-doctor/scripts/summary_contract.py",
     ".agents/skills/amazon-listing-doctor/scripts/evaluate_batch.py",
     ".agents/skills/amazon-listing-doctor/i18n/en.json",
     ".agents/skills/amazon-listing-doctor/i18n/zh-CN.json",
@@ -65,8 +66,8 @@ def validate_skill() -> None:
         fail("SKILL.md name is invalid")
     if not re.search(r"(?m)^description:\s+.+$", frontmatter):
         fail("SKILL.md description is missing")
-    if not re.search(r"(?m)^\s+version:\s+1\.3\.0\s*$", frontmatter):
-        fail("SKILL.md version is not 1.3.0")
+    if not re.search(r"(?m)^\s+version:\s+1\.3\.1\s*$", frontmatter):
+        fail("SKILL.md version is not 1.3.1")
     if (ROOT / "SKILL.md").exists():
         fail("Root SKILL.md would duplicate the repo-scoped skill")
 

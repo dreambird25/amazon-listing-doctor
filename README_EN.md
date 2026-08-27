@@ -4,14 +4,14 @@ A repo-discoverable Codex Skill for evidence-first Amazon Listing diagnostics. I
 
 This public fork of [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) contains no company-specific code, endpoints, schemas, account identifiers, SKUs, ASINs, credentials, or runtime configuration.
 
-Current version: **v1.3.0**. This release adds real Amazon attribute-array adaptation, localized reports, current/candidate content isolation, a bound full-PTD-validation evidence lane, and private Golden Dataset regression tooling. See [`CHANGELOG.md`](CHANGELOG.md).
+Current version: **v1.3.1**. This release adds a concise default conclusion, a transparent internal 10-point content-quality score, and evidence-constrained suggested rewrites. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Three independent conclusions
 
 | Layer | Output | Official submission effect |
 |---|---|---|
 | Official evidence | Current Listing gate, candidate preview gate, release decision, and validation completeness | Applies only within the bound official evidence scope |
-| Content quality | Seven dimensions rated `STRONG / ADEQUATE / WEAK / NOT_EVALUATED` | Never changes the official gate |
+| Content quality | Seven ratings plus a transparent internal 10-point score | Never changes the official gate |
 | Business performance | `performance_verdict=NOT_EVALUATED` | Requires separate traffic, conversion, returns, and sales evidence |
 
 The Skill does not produce official CDQ, A9, COSMO, or Rufus scores and does not predict indexing, ranking, traffic, or conversion.
@@ -55,7 +55,7 @@ The public version does not authenticate to Seller Central or call SP-API. A use
 
 ## Production status
 
-v1.3.0 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass.
+v1.3.1 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass.
 
 Unattended automatic release still requires a full Draft 2019-09 validator with Amazon vocabulary support, independent Preview rate limiting, an authorized submission workflow, and post-submission issue/status reconciliation in the integrating system. See the [official-source production research](docs/production-readiness-research.md) and [production integration guide](.agents/skills/amazon-listing-doctor/references/production-readiness.md).
 
@@ -77,12 +77,15 @@ Unattended evidence also requires `requirementsEnforced=ENFORCED`; a valid exter
 
 ```bash
 python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown
+python scripts/render_report.py --report merged-report.json --lang en --format markdown --view detailed
 python scripts/evaluate_batch.py --file private-golden-dataset.jsonl
 ```
 
-`scope.locale` controls Listing validation; `report_locale`/`--lang` controls display only. Candidate Preview `PASS` means “candidate preview passed,” never “published successfully.” Batch evaluation emits aggregate gates and hashed sample references, not source Listing content.
+The first command uses the concise default view; `--view detailed` renders the complete audit report. `scope.locale` controls Listing validation; `report_locale`/`--lang` controls display only. Candidate Preview `PASS` means “candidate preview passed,” never “published successfully.” Batch evaluation emits aggregate gates and hashed sample references, not source Listing content.
 
 The quality branch follows [`quality-assessment.md`](.agents/skills/amazon-listing-doctor/references/quality-assessment.md) and is validated and merged by `scripts/merge_report.py` inside the Skill. Official input/output is defined in [`report-contract.md`](.agents/skills/amazon-listing-doctor/references/report-contract.md).
+
+The score maps `STRONG=10`, `ADEQUATE=7`, and `WEAK=3`, averages only evaluated dimensions, and rounds to one decimal place. Fewer than five evidenced dimensions returns `NOT_SCORED`. It is an internal heuristic—not an Amazon score or a performance prediction. An applicable official error, evidence failure, or warning takes priority as the primary reason and action. An exact suggested value must match product facts cited by an evaluated dimension and still pass the applicable PTD and candidate Preview.
 
 ## Safety boundaries
 

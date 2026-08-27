@@ -29,7 +29,7 @@ Supply all seven dimensions. An evaluated dimension requires a concise rationale
 {
   "assessment_version": "1.1",
   "assessment_model": "MODEL_IDENTIFIER",
-  "prompt_version": "quality-v1.3",
+  "prompt_version": "quality-v1.3.1",
   "assessed_at": "2026-01-01T00:00:00Z",
   "dimensions": {
     "content_completeness": {
@@ -57,6 +57,8 @@ Supply all seven dimensions. An evaluated dimension requires a concise rationale
 
 The abbreviated example above shows field shape; the actual object must contain every dimension from the table.
 
+Write `rationale`, `action`, `current_problem`, and `suggested_value` in `report_locale`. Stable enum values and attribute names remain unchanged.
+
 ## Derived result
 
 `scripts/merge_report.py` validates the assessment and derives:
@@ -68,6 +70,28 @@ The abbreviated example above shows field shape; the actual object must contain 
 - `NOT_EVALUATED` when no dimension is evaluated.
 
 The script also emits `quality_evidence_completeness` as `COMPLETE`, `PARTIAL`, or `NONE`, preserves the four trace fields under `quality_assessment_trace`, and always emits `performance_verdict=NOT_EVALUATED`. `assessed_at` must be a timezone-aware ISO-8601 timestamp. Record the actual model identifier and prompt contract version so a changed evaluator can be detected in Golden Dataset regression.
+
+### Internal 10-point score
+
+`executive_summary.quality_score` is a deterministic display aid:
+
+- `STRONG = 10`, `ADEQUATE = 7`, and `WEAK = 3`.
+- Average only evaluated dimensions and round to one decimal place.
+- Emit `SCORED` only when at least five of seven dimensions are evaluated; otherwise emit `NOT_SCORED` with no numeric value.
+- Preserve `type=INTERNAL_HEURISTIC`, `official=false`, the evaluated-dimension count, and `rubric_version=1.0`.
+
+The score never changes an official gate. A high content score can coexist with an official blocker, incomplete validation, or unknown release decision. It is not an Amazon score and does not predict indexing, ranking, traffic, conversion, or sales.
+
+### Exact suggested values
+
+An action may include an exact `suggested_value` only when it also contains:
+
+- `attribute`: the field to change;
+- `current_problem`: the observed defect;
+- `source_evidence`: at least one supplied fact whose `field` and `quote_or_value` exactly match evidence already cited by an evaluated dimension;
+- `completion_criterion`: how a reviewer will verify the change.
+
+The target dimension must have an evaluated rating. Do not generate an exact rewrite for a `NOT_EVALUATED` dimension. A suggested value is advisory, must not add unsupported claims, and must still pass the applicable PTD and a bound candidate `VALIDATION_PREVIEW`.
 
 ## Evidence discipline
 

@@ -180,7 +180,8 @@ Legacy convenience mapping is `title → item_name`, `item_highlight → item_hi
 - `counts`: counts for all five evidence states.
 - `candidate`, `listing_snapshot`, and `validation_preview`: normalized traceability summaries; candidate content and seller credentials are not copied into the report.
 - `report_locale` and `content_contract`: display language and current/candidate normalization traceability. `report_locale` never changes `scope.locale` or validation results.
+- `executive_summary`: concise user-facing facts derived during a successful quality merge. It contains the ASIN context, a copy of the official gates and completeness, the internal quality score, primary reason, primary action, and `performance_verdict=NOT_EVALUATED`. It is additive and never replaces or alters the canonical official fields.
 
-A human report should include identity, separate current/candidate/release conclusions, validation completeness, timestamps, priority actions, completion criteria, recheck method, reconsideration conditions, and untested areas. “No finding” is not “passed” unless the corresponding official check completed successfully.
+`scripts/render_report.py` defaults to `--view concise`, which shows identity, canonical current/release decisions, official validation completeness, score coverage, primary reason, and one action. Use `--view detailed` for the complete findings audit. “No finding” is not “passed” unless the corresponding official check completed successfully.
 
 When content quality is requested, create and validate the separate object defined in [the quality assessment contract](quality-assessment.md), then merge it with `scripts/merge_report.py`. Quality fields never alter the official gates above.

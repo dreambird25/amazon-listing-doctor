@@ -1,5 +1,7 @@
 # Examples
 
+Run `render_report.py` without `--view` for the default concise user conclusion. Add `--view detailed` to inspect all findings, stable codes, and original messages. The semantic assessment is synthetic and demonstrates the seven-dimension merge contract; it contains no real Listing identifier or private product record.
+
 These fixtures contain placeholders only. They demonstrate the public contract and contain no real seller, SKU, ASIN, credential, or endpoint.
 
 Run from the Skill directory:

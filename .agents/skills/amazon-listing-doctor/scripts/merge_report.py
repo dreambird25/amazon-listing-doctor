@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from summary_contract import official_action, primary_official_finding
+
+
 DIMENSIONS = (
     "content_completeness",
     "clarity_and_readability",
@@ -23,6 +27,10 @@ DIMENSIONS = (
 )
 RATINGS = {"STRONG", "ADEQUATE", "WEAK", "NOT_EVALUATED"}
 PRIORITIES = {"HIGH", "MEDIUM", "LOW"}
+PRIORITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+RATING_POINTS = {"STRONG": 10.0, "ADEQUATE": 7.0, "WEAK": 3.0}
+MIN_SCORED_DIMENSIONS = 5
+SCORE_RUBRIC_VERSION = "1.0"
 OFFICIAL_REPORT_FIELDS = {
     "current_listing_gate",
     "candidate_preview_gate",
@@ -105,6 +113,18 @@ def validate_assessment(assessment: Any) -> list[str]:
             if not evidence or not valid_evidence:
                 errors.append(f"{name} requires evidence with field and quote_or_value")
 
+    assessed_evidence = {
+        (item["field"].strip(), item["quote_or_value"].strip())
+        for name in DIMENSIONS
+        for item in (
+            dimensions.get(name, {}).get("evidence", [])
+            if isinstance(dimensions.get(name), dict) else []
+        )
+        if isinstance(item, dict)
+        and nonempty_text(item.get("field"))
+        and nonempty_text(item.get("quote_or_value"))
+    }
+
     recommendations = assessment.get("recommendations", [])
     if not isinstance(recommendations, list):
         errors.append("recommendations must be an array")
@@ -121,6 +141,39 @@ def validate_assessment(assessment: Any) -> list[str]:
             for field in ("action", "completion_criterion"):
                 if not nonempty_text(recommendation.get(field)):
                     errors.append(f"{prefix}.{field} is required")
+            for field in ("attribute", "current_problem", "suggested_value"):
+                if field in recommendation and not nonempty_text(recommendation.get(field)):
+                    errors.append(f"{prefix}.{field} must be a non-empty string when supplied")
+            if "suggested_value" in recommendation:
+                dimension = recommendation.get("dimension")
+                dimension_row = dimensions.get(dimension) if dimension in DIMENSIONS else None
+                if isinstance(dimension_row, dict) and dimension_row.get("rating") == "NOT_EVALUATED":
+                    errors.append(f"{prefix}.suggested_value cannot target a NOT_EVALUATED dimension")
+                if not nonempty_text(recommendation.get("attribute")):
+                    errors.append(f"{prefix}.attribute is required with suggested_value")
+                if not nonempty_text(recommendation.get("current_problem")):
+                    errors.append(f"{prefix}.current_problem is required with suggested_value")
+                source_evidence = recommendation.get("source_evidence")
+                valid_source_evidence = isinstance(source_evidence, list) and bool(source_evidence) \
+                    and all(
+                        isinstance(item, dict)
+                        and nonempty_text(item.get("field"))
+                        and nonempty_text(item.get("quote_or_value"))
+                        for item in source_evidence
+                    )
+                if not valid_source_evidence:
+                    errors.append(
+                        f"{prefix}.source_evidence with field and quote_or_value "
+                        "is required with suggested_value"
+                    )
+                elif any(
+                    (item["field"].strip(), item["quote_or_value"].strip())
+                    not in assessed_evidence
+                    for item in source_evidence
+                ):
+                    errors.append(
+                        f"{prefix}.source_evidence must match evidence from an evaluated dimension"
+                    )
 
     limitations = assessment.get("limitations", [])
     if not isinstance(limitations, list) or not all(nonempty_text(item) for item in limitations):
@@ -141,6 +194,90 @@ def derive_quality(dimensions: dict[str, Any]) -> tuple[str, str]:
     if all(rating == "STRONG" for rating in evaluated):
         return "STRONG", completeness
     return "ADEQUATE", completeness
+
+
+def derive_quality_score(dimensions: dict[str, Any]) -> dict[str, Any]:
+    evaluated = [
+        dimensions[name]["rating"]
+        for name in DIMENSIONS
+        if dimensions[name]["rating"] != "NOT_EVALUATED"
+    ]
+    result: dict[str, Any] = {
+        "status": "SCORED" if len(evaluated) >= MIN_SCORED_DIMENSIONS else "NOT_SCORED",
+        "value": None,
+        "scale": 10,
+        "type": "INTERNAL_HEURISTIC",
+        "official": False,
+        "evaluated_dimensions": len(evaluated),
+        "total_dimensions": len(DIMENSIONS),
+        "minimum_dimensions_required": MIN_SCORED_DIMENSIONS,
+        "rubric_version": SCORE_RUBRIC_VERSION,
+        "rating_points": dict(RATING_POINTS),
+    }
+    if len(evaluated) >= MIN_SCORED_DIMENSIONS:
+        result["value"] = round(sum(RATING_POINTS[rating] for rating in evaluated) / len(evaluated), 1)
+    else:
+        result["not_scored_reason"] = "Insufficient evaluated quality dimensions."
+    return result
+
+
+def primary_quality_reason(dimensions: dict[str, Any]) -> dict[str, Any] | None:
+    for target_rating in ("WEAK", "ADEQUATE", "STRONG"):
+        for name in DIMENSIONS:
+            row = dimensions[name]
+            if row["rating"] == target_rating:
+                return {
+                    "dimension": name,
+                    "rating": target_rating,
+                    "text": row["rationale"],
+                }
+    return None
+
+
+def primary_recommendation(
+        recommendations: list[dict[str, Any]], reason: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    ordered = sorted(
+        enumerate(recommendations),
+        key=lambda item: (
+            0 if reason and item[1].get("dimension") == reason.get("dimension") else 1,
+            PRIORITY_ORDER[item[1]["priority"]],
+            item[0],
+        ),
+    )
+    if not ordered:
+        return None
+    recommendation = copy.deepcopy(ordered[0][1])
+    recommendation["rewrite_is_advisory"] = "suggested_value" in recommendation
+    return recommendation
+
+
+def build_executive_summary(
+        official_report: dict[str, Any], assessment: dict[str, Any], verdict: str,
+) -> dict[str, Any]:
+    scope = official_report.get("scope") if isinstance(official_report.get("scope"), dict) else {}
+    quality_reason = primary_quality_reason(assessment["dimensions"])
+    quality_action = primary_recommendation(assessment.get("recommendations") or [], quality_reason)
+    official_reason = primary_official_finding(official_report)
+    return {
+        "summary_version": "1.0",
+        "asin": scope.get("asin"),
+        "official": {
+            "current_listing_gate": official_report["current_listing_gate"],
+            "candidate_preview_gate": official_report["candidate_preview_gate"],
+            "candidate_local_validation_gate": official_report["candidate_local_validation_gate"],
+            "release_decision": official_report["release_decision"],
+            "validation_completeness": official_report["official_validation_completeness"],
+        },
+        "quality_verdict": verdict,
+        "quality_score": derive_quality_score(assessment["dimensions"]),
+        "primary_reason": official_reason or quality_reason,
+        "primary_action": official_action(official_reason) or quality_action,
+        "quality_primary_reason": quality_reason,
+        "quality_primary_action": quality_action,
+        "performance_verdict": "NOT_EVALUATED",
+        "disclaimer": "Internal content-quality summary; not an Amazon official score or performance prediction.",
+    }
 
 
 def merge_report(official_report: Any, assessment: Any) -> tuple[dict[str, Any], bool]:
@@ -174,6 +311,7 @@ def merge_report(official_report: Any, assessment: Any) -> tuple[dict[str, Any],
         },
         "performance_verdict": "NOT_EVALUATED",
     })
+    result["executive_summary"] = build_executive_summary(result, assessment, verdict)
     return result, True
 
 

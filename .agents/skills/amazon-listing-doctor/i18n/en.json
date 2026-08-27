@@ -1,6 +1,7 @@
 {
   "headings": {
     "title": "Amazon Listing diagnostic report",
+    "concise_title": "Amazon Listing quality conclusion",
     "summary": "Decision summary",
     "findings": "Findings",
     "original_message": "Original message"
@@ -11,6 +12,18 @@
     "candidate_local_validation": "Candidate Local Validation",
     "release_decision": "Release Decision",
     "official_validation_completeness": "Official Validation Completeness",
+    "asin": "ASIN",
+    "quality_score": "Content quality score",
+    "quality_verdict": "Content quality verdict",
+    "primary_reason": "Primary reason",
+    "primary_action": "Recommended action",
+    "suggested_value": "Suggested value",
+    "completion_criterion": "Completion criterion",
+    "score_disclaimer": "Internal heuristic score, not an Amazon official score",
+    "not_scored": "Not scored",
+    "dimensions": "Evaluated dimensions",
+    "no_reason": "No content-quality reason is available",
+    "no_action": "No evidence-grounded rewrite is available",
     "none": "None"
   },
   "gate_labels": {
@@ -20,6 +33,28 @@
     "NOT_EVALUATED": "Not evaluated",
     "UNKNOWN": "Unknown",
     "NO_KNOWN_OFFICIAL_ISSUES": "No known official issues"
+  },
+  "local_gate_labels": {
+    "BLOCK": "Candidate local validation failed",
+    "REVIEW": "Candidate local validation requires review",
+    "PASS": "Candidate local validation passed",
+    "NOT_EVALUATED": "Candidate local validation not evaluated",
+    "UNKNOWN": "Candidate local validation evidence unknown"
+  },
+  "quality_labels": {
+    "STRONG": "Strong",
+    "ADEQUATE": "Adequate",
+    "NEEDS_IMPROVEMENT": "Needs improvement",
+    "PARTIALLY_EVALUATED": "Partially evaluated",
+    "NOT_EVALUATED": "Not evaluated"
+  },
+  "action_codes": {
+    "FIX_OFFICIAL_BLOCKER_AND_REVALIDATE": "Fix the official Amazon error first, then rerun complete validation.",
+    "REVIEW_OFFICIAL_EVIDENCE": "Complete or review the official evidence before deciding whether to release."
+  },
+  "completion_codes": {
+    "OFFICIAL_BLOCKER_CLEARED": "The official error is absent and the candidate Preview and applicable PTD validation are complete.",
+    "OFFICIAL_EVIDENCE_COMPLETED": "Official evidence is complete and the release decision is no longer unknown or not evaluated."
   },
   "release_labels": {
     "BLOCK": "Release blocked",
