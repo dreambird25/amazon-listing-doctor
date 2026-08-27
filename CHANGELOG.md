@@ -2,6 +2,27 @@
 
 本项目采用语义化版本。版本记录描述公共契约和行为变化，不登记任何接入方私有实现或数据。
 
+## [1.1.0] - 2026-08-27
+
+### 新增
+
+- 将唯一 Skill 本体迁入 `.agents/skills/amazon-listing-doctor/`，克隆仓库后可按 Codex repo-scoped Skill 规则自动发现。
+- 新增七维内容质量契约，统一使用 `STRONG / ADEQUATE / WEAK / NOT_EVALUATED` 并要求直接证据。
+- 新增 `merge_report.py`，确定性验证语义评估并派生 `quality_verdict`、证据完整度和固定的 `performance_verdict=NOT_EVALUATED`。
+- 新增 `ptd_validation_coverage`，明确本地 PTD 引擎只是 `LIGHTWEIGHT_SUBSET`，不冒充完整 Schema 校验。
+- 新增完整通过、官方阻断、证据不足和语义评估示例，测试直接校验示例的预期门禁。
+- README 增加 Skill 安装、调用、输入来源、仅有 ASIN 时的边界，以及 Skill/CLI 两类入口。
+
+### 兼容性
+
+- 根目录 `scripts/diagnose_listing.py` 保留为兼容 CLI，核心实现的唯一来源迁入 Skill 目录。
+- `scripts/compliance_report.py` 继续转发兼容 CLI。
+- 当前版本仍不包含 Plugin manifest、MCP Server 或实时 SP-API 认证。
+
+### 验证
+
+- 行为测试由 19 个增加到 27 个，覆盖标准示例、七维质量 Schema、证据要求、报告契约和 verdict 派生。
+
 ## [1.0.1] - 2026-08-27
 
 ### 修复

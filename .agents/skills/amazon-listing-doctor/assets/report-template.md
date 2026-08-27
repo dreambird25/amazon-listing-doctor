@@ -6,6 +6,9 @@
 - 候选预检：`BLOCK / REVIEW / PASS / NOT_EVALUATED / UNKNOWN`
 - 发布决策：`BLOCK / REVIEW / PASS / NOT_EVALUATED / UNKNOWN`
 - 官方验证完整度：`COMPLETE / INCOMPLETE`
+- 内容质量：`STRONG / ADEQUATE / NEEDS_IMPROVEMENT / PARTIALLY_EVALUATED / NOT_EVALUATED`
+- 内容证据完整度：`COMPLETE / PARTIAL / NONE`
+- 业务表现：`NOT_EVALUATED`
 - 官方预检：已完成 / 未完成 / 执行异常
 - 最重要行动：最多三项，先官方 ERROR，再 WARNING，最后优化建议
 
@@ -28,7 +31,7 @@
 
 ## 内部优化建议
 
-逐项列出 `HEURISTIC_ADVICE`，明确“不参与发布门禁”，并引用 Listing 原文或图片元数据。不得承诺排名、流量或推荐结果。
+按七个质量维度列出 rating、理由和 Listing 原文或图片元数据证据。逐项列出 `HEURISTIC_ADVICE`，明确“不参与发布门禁”。不得承诺排名、流量或推荐结果。
 
 ## 未评估与系统异常
 

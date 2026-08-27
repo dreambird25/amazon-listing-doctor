@@ -1,0 +1,4 @@
+interface:
+  display_name: "Amazon Listing Doctor"
+  short_description: "Diagnose Listings with traceable evidence"
+  default_prompt: "Use $amazon-listing-doctor to diagnose this Listing, separating official evidence, content quality, and untested areas."

@@ -98,6 +98,7 @@ Default mapping: `title → item_name`, `item_highlight → item_highlight`, `ba
 - `release_reasons`: stable reason codes explaining the combined decision.
 - `official_scope`: candidate operation, `FULL/PARTIAL/UNKNOWN` coverage, and PATCH touched attributes.
 - `official_validation_completeness`: `COMPLETE` or `INCOMPLETE`. It is independent from blockers, so known ERROR plus another evidence failure remains `BLOCK + INCOMPLETE`.
+- `ptd_validation_coverage`: describes only the deterministic local PTD subset. `mode=LIGHTWEIGHT_SUBSET` and `full_schema_validation=false` are deliberate: the script executes supported length/item constraints but does not claim to implement the complete conditional PTD Schema.
 - `gate`: 1.0.x compatibility mirror. It returns `PASS_OFFICIAL_CHECKS` when `release_decision=PASS`; otherwise it mirrors `release_decision`.
 - `coverage`: `PROVIDED` or `MISSING` per content field.
 - `findings`: `status`, `code`, `message`, `source`, optional `attribute`, and optional `evidence`.
@@ -105,3 +106,5 @@ Default mapping: `title → item_name`, `item_highlight → item_highlight`, `ba
 - `candidate` and `validation_preview`: normalized traceability summaries; the candidate payload itself is not copied into the report.
 
 A human report should include identity, separate current/candidate/release conclusions, validation completeness, timestamps, priority actions, completion criteria, recheck method, reconsideration conditions, and untested areas. “No finding” is not “passed” unless the corresponding official check completed successfully.
+
+When content quality is requested, create and validate the separate object defined in [the quality assessment contract](quality-assessment.md), then merge it with `scripts/merge_report.py`. Quality fields never alter the official gates above.

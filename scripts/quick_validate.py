@@ -10,18 +10,27 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = ROOT / ".agents" / "skills" / "amazon-listing-doctor"
 REQUIRED = (
-    "SKILL.md",
     "README.md",
     "README_EN.md",
     "CHANGELOG.md",
     "LICENSE",
-    "agents/openai.yaml",
-    "assets/report-template.md",
-    "references/evidence-model.md",
-    "references/erp-integration.md",
-    "references/report-contract.md",
     "scripts/diagnose_listing.py",
+    "scripts/compliance_report.py",
+    ".agents/skills/amazon-listing-doctor/SKILL.md",
+    ".agents/skills/amazon-listing-doctor/agents/openai.yaml",
+    ".agents/skills/amazon-listing-doctor/assets/report-template.md",
+    ".agents/skills/amazon-listing-doctor/references/evidence-model.md",
+    ".agents/skills/amazon-listing-doctor/references/erp-integration.md",
+    ".agents/skills/amazon-listing-doctor/references/quality-assessment.md",
+    ".agents/skills/amazon-listing-doctor/references/report-contract.md",
+    ".agents/skills/amazon-listing-doctor/scripts/diagnose_listing.py",
+    ".agents/skills/amazon-listing-doctor/scripts/merge_report.py",
+    ".agents/skills/amazon-listing-doctor/examples/listing-valid.json",
+    ".agents/skills/amazon-listing-doctor/examples/listing-blocked.json",
+    ".agents/skills/amazon-listing-doctor/examples/listing-incomplete.json",
+    ".agents/skills/amazon-listing-doctor/examples/semantic-assessment.json",
 )
 
 
@@ -36,7 +45,7 @@ def validate_files() -> None:
 
 
 def validate_skill() -> None:
-    text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     if not text.startswith("---\n") or "\n---\n" not in text[4:]:
         fail("SKILL.md frontmatter is missing or malformed")
     frontmatter = text.split("---", 2)[1]
@@ -44,8 +53,10 @@ def validate_skill() -> None:
         fail("SKILL.md name is invalid")
     if not re.search(r"(?m)^description:\s+.+$", frontmatter):
         fail("SKILL.md description is missing")
-    if not re.search(r"(?m)^\s+version:\s+1\.0\.1\s*$", frontmatter):
-        fail("SKILL.md version is not 1.0.1")
+    if not re.search(r"(?m)^\s+version:\s+1\.1\.0\s*$", frontmatter):
+        fail("SKILL.md version is not 1.1.0")
+    if (ROOT / "SKILL.md").exists():
+        fail("Root SKILL.md would duplicate the repo-scoped skill")
 
 
 def validate_public_boundary() -> None:

@@ -1,0 +1,11 @@
+{
+  "scope": {
+    "sku": "SELLER_SKU",
+    "locale": "en_US"
+  },
+  "content": {
+    "title": "Example title from a spreadsheet",
+    "bullets": ["Example bullet supplied without official SP-API evidence."]
+  },
+  "official": {}
+}

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Amazon Listing Doctor"
-  short_description: "Separate Amazon evidence from optimization advice"
-  default_prompt: "Use $amazon-listing-doctor to diagnose this Listing with official SP-API evidence and clearly labeled optimization advice."

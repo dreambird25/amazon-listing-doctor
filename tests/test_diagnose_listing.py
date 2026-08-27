@@ -3,7 +3,14 @@ import unittest
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "diagnose_listing.py"
+SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / ".agents"
+    / "skills"
+    / "amazon-listing-doctor"
+    / "scripts"
+    / "diagnose_listing.py"
+)
 SPEC = importlib.util.spec_from_file_location("diagnose_listing", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

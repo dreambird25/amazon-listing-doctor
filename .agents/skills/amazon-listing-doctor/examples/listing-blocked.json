@@ -1,0 +1,59 @@
+{
+  "scope": {
+    "seller_id": "SELLER_ID",
+    "marketplace_id": "MARKETPLACE_ID",
+    "sku": "SELLER_SKU",
+    "product_type": "PRODUCT_TYPE",
+    "requirements": "LISTING",
+    "parentage_level": "CHILD",
+    "locale": "en_US"
+  },
+  "candidate": {
+    "operation": "PUT",
+    "requirements": "LISTING",
+    "parentage_level": "CHILD",
+    "payload_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "created_at": "2026-01-01T00:00:00Z"
+  },
+  "content": {
+    "title": "Example title",
+    "images": [{"is_main": true, "width": 1600, "height": 1600}]
+  },
+  "official": {
+    "listing_issues": [{
+      "code": "CURRENT_ISSUE",
+      "message": "Example current Listing error.",
+      "severity": "ERROR",
+      "attributeNames": ["item_name"]
+    }],
+    "validation_preview": {
+      "ran": true,
+      "mode": "VALIDATION_PREVIEW",
+      "operation": "PUT",
+      "payload_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "seller_id": "SELLER_ID",
+      "marketplace_id": "MARKETPLACE_ID",
+      "sku": "SELLER_SKU",
+      "product_type": "PRODUCT_TYPE",
+      "request_id": "REQUEST_ID",
+      "submission_id": "PREVIEW_ID",
+      "requested_at": "2026-01-01T00:00:01Z",
+      "responded_at": "2026-01-01T00:00:02Z",
+      "http_status": 200,
+      "status": "INVALID",
+      "issues": [{
+        "code": "CANDIDATE_ISSUE",
+        "message": "Example candidate error.",
+        "severity": "ERROR",
+        "attributeNames": ["item_name"]
+      }]
+    },
+    "ptd": {
+      "status": "FRESH",
+      "schema_checksum": "SCHEMA_CHECKSUM",
+      "constraints": {
+        "item_name": [{"type": "MAX_LENGTH", "value": 125, "unit": "CODE_POINTS"}]
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "assessment_version": "1.0",
+  "assessed_at": "2026-01-01T00:00:03Z",
+  "dimensions": {
+    "content_completeness": {
+      "rating": "WEAK",
+      "rationale": "Core text is present, but variation, backend-term, and additional image evidence is absent.",
+      "evidence": [{"field": "content", "quote_or_value": "title, three bullets, description, and one image supplied"}],
+      "missing_evidence": ["variation data", "backend search terms", "additional images"]
+    },
+    "clarity_and_readability": {
+      "rating": "STRONG",
+      "rationale": "The title states material, product type, and capacity without visible repetition.",
+      "evidence": [{"field": "title", "quote_or_value": "Insulated Stainless Steel Water Bottle, 24 oz"}],
+      "missing_evidence": []
+    },
+    "intent_coverage": {
+      "rating": "ADEQUATE",
+      "rationale": "The content names commuting, workouts, and everyday hydration use cases.",
+      "evidence": [{"field": "description", "quote_or_value": "for commuting, workouts, and everyday hydration"}],
+      "missing_evidence": ["explicit use limitations"]
+    },
+    "buyer_question_coverage": {
+      "rating": "ADEQUATE",
+      "rationale": "Capacity, lid behavior, insulation, and cup-holder fit are addressed.",
+      "evidence": [{"field": "bullets", "quote_or_value": "24 oz capacity with a narrow base for common cup holders"}],
+      "missing_evidence": ["care instructions"]
+    },
+    "image_information_coverage": {
+      "rating": "WEAK",
+      "rationale": "Only one main-image record is supplied, so use, feature, and packaging views are absent.",
+      "evidence": [{"field": "images", "quote_or_value": "one 1600x1600 main image"}],
+      "missing_evidence": ["secondary image set"]
+    },
+    "cross_field_consistency": {
+      "rating": "ADEQUATE",
+      "rationale": "The supplied title, bullets, and description consistently describe a 24 oz insulated bottle.",
+      "evidence": [{"field": "title", "quote_or_value": "Insulated Stainless Steel Water Bottle, 24 oz"}],
+      "missing_evidence": ["structured capacity attribute"]
+    },
+    "localization_quality": {
+      "rating": "NOT_EVALUATED",
+      "rationale": "",
+      "evidence": [],
+      "missing_evidence": ["marketplace-specific language and unit requirements"]
+    }
+  },
+  "recommendations": [
+    {
+      "priority": "HIGH",
+      "dimension": "content_completeness",
+      "action": "Provide the missing structured, variation, and backend-term evidence.",
+      "completion_criterion": "The normalized input contains the applicable attributes, variation relationship, and backend search terms."
+    },
+    {
+      "priority": "MEDIUM",
+      "dimension": "image_information_coverage",
+      "action": "Add secondary images covering use, features, and included packaging.",
+      "completion_criterion": "Image metadata identifies the main image and each secondary information role."
+    }
+  ],
+  "limitations": ["No business performance metrics were supplied."]
+}
