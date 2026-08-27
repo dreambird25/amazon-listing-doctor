@@ -2,14 +2,19 @@
 
 ## 结论
 
-- 发布门禁：`BLOCK / REVIEW / PASS_OFFICIAL_CHECKS / NOT_EVALUATED / UNKNOWN`
+- 当前 Listing：`BLOCK / REVIEW / NO_KNOWN_OFFICIAL_ISSUES / NOT_EVALUATED / UNKNOWN`
+- 候选预检：`BLOCK / REVIEW / PASS / NOT_EVALUATED / UNKNOWN`
+- 发布决策：`BLOCK / REVIEW / PASS / NOT_EVALUATED / UNKNOWN`
+- 官方验证完整度：`COMPLETE / INCOMPLETE`
 - 官方预检：已完成 / 未完成 / 执行异常
 - 最重要行动：最多三项，先官方 ERROR，再 WARNING，最后优化建议
 
 ## 诊断对象
 
 - 店铺 / Marketplace / Seller SKU：
-- ASIN / Product Type / Language：
+- ASIN / Product Type / Requirements / Parentage / Locale：
+- Candidate operation / Payload SHA-256 / Touched attributes：
+- Preview request ID / submission ID / 请求与响应时间：
 - 数据截止时间：
 - 数据来源：
 
@@ -19,7 +24,7 @@
 
 ## 官方发现
 
-逐项列出 `OFFICIAL_ERROR` 与 `OFFICIAL_WARNING`：code、属性、Amazon 原始消息、Schema checksum/版本或 submissionId、修复完成条件和复核方式。
+分别列出当前 Listing 与候选 Preview 的 `OFFICIAL_ERROR`、`OFFICIAL_WARNING`：code、原始 severity、属性、Amazon 原始消息、Schema checksum/版本或 submissionId、修复完成条件和复核方式。
 
 ## 内部优化建议
 

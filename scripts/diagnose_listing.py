@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -30,6 +31,8 @@ CONTENT_ATTRIBUTE_MAP = {
     "backend_search_terms": "generic_keyword",
     "bullets": "bullet_point",
 }
+OFFICIAL_SOURCES = {"INPUT", "LISTINGS_ITEMS", "PTD", "VALIDATION_PREVIEW"}
+SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def finding(status: str, code: str, message: str, source: str,
@@ -88,7 +91,8 @@ def classify_official_issue(issue: Any, source: str) -> dict[str, Any]:
     severity = str(issue.get("severity") or "").upper()
     if severity == "ERROR":
         status = OFFICIAL_ERROR
-    elif severity == "WARNING":
+    elif severity in {"WARNING", "INFO"}:
+        # Keep the five-state contract while preserving Amazon's severity in evidence.
         status = OFFICIAL_WARNING
     else:
         return finding(
@@ -110,16 +114,16 @@ def classify_official_issue(issue: Any, source: str) -> dict[str, Any]:
     )
 
 
-def evaluate_ptd(content: dict[str, Any], ptd: Any) -> list[dict[str, Any]]:
+def evaluate_ptd(content: dict[str, Any], ptd: Any) -> tuple[list[dict[str, Any]], bool]:
     if ptd is None:
         return [finding(
             NOT_EVALUATED,
             "PTD_MISSING",
             "No Product Type Definition was supplied; local official-constraint checks were not run.",
             "PTD",
-        )]
+        )], False
     if not isinstance(ptd, dict):
-        return [finding(SYSTEM_ERROR, "PTD_INVALID", "PTD data is not an object.", "PTD", evidence=ptd)]
+        return [finding(SYSTEM_ERROR, "PTD_INVALID", "PTD data is not an object.", "PTD", evidence=ptd)], False
 
     rows: list[dict[str, Any]] = []
     status = str(ptd.get("status") or "UNAVAILABLE").upper()
@@ -129,7 +133,7 @@ def evaluate_ptd(content: dict[str, Any], ptd: Any) -> list[dict[str, Any]]:
             "PTD_UNAVAILABLE",
             "The current PTD schema is unavailable; attribute limits were not inferred.",
             "PTD",
-        )]
+        )], False
     if status not in {"FRESH", "STALE_WITHIN_GRACE"}:
         return [finding(
             SYSTEM_ERROR,
@@ -137,7 +141,7 @@ def evaluate_ptd(content: dict[str, Any], ptd: Any) -> list[dict[str, Any]]:
             "The PTD status is unknown and the schema cannot be used safely.",
             "PTD",
             evidence=status,
-        )]
+        )], False
     if status == "STALE_WITHIN_GRACE":
         rows.append(finding(
             OFFICIAL_WARNING,
@@ -155,7 +159,7 @@ def evaluate_ptd(content: dict[str, Any], ptd: Any) -> list[dict[str, Any]]:
             "The PTD input contains no executable constraints.",
             "PTD",
         ))
-        return rows
+        return rows, False
 
     supported_types = {"MAX_LENGTH", "MIN_LENGTH", "MAX_ITEMS", "MIN_ITEMS"}
     supported_units = {"CODE_POINTS", "UTF8_BYTES", "ITEMS"}
@@ -236,7 +240,8 @@ def evaluate_ptd(content: dict[str, Any], ptd: Any) -> list[dict[str, Any]]:
                         "resolved_version": ptd.get("resolved_version"),
                     },
                 ))
-    return rows
+    ptd_complete = not any(row["status"] in {NOT_EVALUATED, SYSTEM_ERROR} for row in rows)
+    return rows, ptd_complete
 
 
 def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
@@ -252,6 +257,7 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
         return [finding(SYSTEM_ERROR, "IMAGES_INVALID", "The image set is not an array.", "HEURISTIC")]
 
     rows: list[dict[str, Any]] = []
+    main_identified = False
     for index, image in enumerate(images):
         if not isinstance(image, dict):
             rows.append(finding(
@@ -262,8 +268,10 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
                 evidence={"index": index},
             ))
             continue
+        is_main = image.get("is_main") is True
+        main_identified = main_identified or is_main
         width, height = image.get("width"), image.get("height")
-        label = "main image" if image.get("is_main") else f"image {index + 1}"
+        label = "main image" if is_main else f"image {index + 1}"
         if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
             rows.append(finding(
                 NOT_EVALUATED,
@@ -316,7 +324,7 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
                 evidence={"index": index, "url": image.get("url")},
             ))
 
-        if image.get("is_main"):
+        if is_main:
             if image.get("white_background") is None:
                 rows.append(finding(
                     NOT_EVALUATED,
@@ -333,29 +341,338 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
                     "HEURISTIC",
                     evidence={"index": index, "url": image.get("url")},
                 ))
+    if not main_identified:
+        rows.append(finding(
+            NOT_EVALUATED,
+            "MAIN_IMAGE_NOT_IDENTIFIED",
+            "Images were supplied, but none was identified as the main image; main-image checks were not run.",
+            "HEURISTIC",
+        ))
     return rows
+
+
+def evaluate_validation_preview(
+        scope: dict[str, Any], candidate: Any, preview: Any
+) -> tuple[list[dict[str, Any]], bool, dict[str, Any]]:
+    """Return findings, pass state, and normalized candidate scope."""
+    if preview is not None and not isinstance(preview, dict):
+        return [finding(
+            SYSTEM_ERROR,
+            "VALIDATION_PREVIEW_INVALID",
+            "VALIDATION_PREVIEW evidence is not an object.",
+            "VALIDATION_PREVIEW",
+            evidence=preview,
+        )], False, {}
+    if not isinstance(preview, dict) or preview.get("ran") is not True:
+        return [finding(
+            NOT_EVALUATED,
+            "VALIDATION_PREVIEW_NOT_RUN",
+            "Listings Items VALIDATION_PREVIEW was not completed.",
+            "VALIDATION_PREVIEW",
+        )], False, {}
+
+    rows: list[dict[str, Any]] = []
+    binding_valid = True
+
+    required_scope = (
+        "seller_id", "marketplace_id", "sku", "product_type",
+        "requirements", "parentage_level", "locale",
+    )
+    missing_scope = [name for name in required_scope if not is_provided(scope.get(name))]
+    if missing_scope:
+        binding_valid = False
+        rows.append(finding(
+            NOT_EVALUATED,
+            "VALIDATION_PREVIEW_SCOPE_INCOMPLETE",
+            "The official preview scope is incomplete and cannot support a candidate pass.",
+            "VALIDATION_PREVIEW",
+            evidence={"missing": missing_scope},
+        ))
+
+    if not isinstance(candidate, dict):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "CANDIDATE_EVIDENCE_MISSING",
+            "A completed preview must be paired with a candidate evidence object.",
+            "VALIDATION_PREVIEW",
+        ))
+        candidate = {}
+
+    required_candidate = ("operation", "requirements", "parentage_level", "payload_sha256")
+    missing_candidate = [name for name in required_candidate if not is_provided(candidate.get(name))]
+    if missing_candidate:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "CANDIDATE_EVIDENCE_INCOMPLETE",
+            "Candidate evidence is missing fields required to bind the preview result.",
+            "VALIDATION_PREVIEW",
+            evidence={"missing": missing_candidate},
+        ))
+
+    operation = str(candidate.get("operation") or "").upper()
+    normalized_candidate = {
+        "operation": operation or None,
+        "requirements": candidate.get("requirements"),
+        "parentage_level": candidate.get("parentage_level"),
+        "payload_sha256": candidate.get("payload_sha256"),
+        "touched_attributes": candidate.get("touched_attributes"),
+        "created_at": candidate.get("created_at"),
+    }
+    if operation and operation not in {"PUT", "PATCH"}:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "CANDIDATE_OPERATION_INVALID",
+            "Candidate operation must be PUT or PATCH.",
+            "VALIDATION_PREVIEW",
+            evidence=operation,
+        ))
+
+    payload_sha256 = candidate.get("payload_sha256")
+    if is_provided(payload_sha256) and not SHA256_PATTERN.fullmatch(str(payload_sha256)):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "CANDIDATE_PAYLOAD_HASH_INVALID",
+            "Candidate payload_sha256 must be a 64-character hexadecimal SHA-256 digest.",
+            "VALIDATION_PREVIEW",
+        ))
+
+    for field in ("requirements", "parentage_level"):
+        if is_provided(candidate.get(field)) and is_provided(scope.get(field)) \
+                and str(candidate.get(field)) != str(scope.get(field)):
+            binding_valid = False
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "CANDIDATE_SCOPE_MISMATCH",
+                f"Candidate {field} does not match the diagnostic scope.",
+                "VALIDATION_PREVIEW",
+                evidence={"field": field, "expected": scope.get(field), "actual": candidate.get(field)},
+            ))
+
+    touched_attributes = candidate.get("touched_attributes")
+    if operation == "PATCH" and (
+            not isinstance(touched_attributes, list)
+            or not touched_attributes
+            or not all(is_provided(item) for item in touched_attributes)
+    ):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PATCH_TOUCHED_ATTRIBUTES_MISSING",
+            "A PATCH candidate must list the attributes it touches.",
+            "VALIDATION_PREVIEW",
+        ))
+    elif touched_attributes is not None and not isinstance(touched_attributes, list):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "TOUCHED_ATTRIBUTES_INVALID",
+            "touched_attributes must be an array when provided.",
+            "VALIDATION_PREVIEW",
+        ))
+
+    required_preview = (
+        "mode", "operation", "payload_sha256", "seller_id", "marketplace_id",
+        "sku", "product_type", "request_id", "submission_id", "requested_at",
+        "responded_at", "http_status", "status", "issues",
+    )
+    missing_preview = [name for name in required_preview if name not in preview or not is_provided(preview.get(name))]
+    # An empty issue array is valid evidence, unlike empty strings and nulls.
+    if "issues" in preview and isinstance(preview.get("issues"), list):
+        missing_preview = [name for name in missing_preview if name != "issues"]
+    if missing_preview:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "VALIDATION_PREVIEW_EVIDENCE_INCOMPLETE",
+            "The completed preview is missing required traceability fields.",
+            "VALIDATION_PREVIEW",
+            evidence={"missing": missing_preview},
+        ))
+
+    issues = preview.get("issues")
+    if "issues" in preview and not isinstance(issues, list):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "VALIDATION_PREVIEW_ISSUES_INVALID",
+            "VALIDATION_PREVIEW issues are not an array.",
+            "VALIDATION_PREVIEW",
+        ))
+    elif isinstance(issues, list):
+        rows.extend(classify_official_issue(issue, "VALIDATION_PREVIEW") for issue in issues)
+
+    mode = str(preview.get("mode") or "").upper()
+    if mode and mode != "VALIDATION_PREVIEW":
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PREVIEW_MODE_MISMATCH",
+            "The response is not explicitly bound to mode=VALIDATION_PREVIEW.",
+            "VALIDATION_PREVIEW",
+            evidence={"mode": preview.get("mode")},
+        ))
+
+    preview_operation = str(preview.get("operation") or "").upper()
+    if preview_operation and operation and preview_operation != operation:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PREVIEW_OPERATION_MISMATCH",
+            "Preview operation does not match the candidate operation.",
+            "VALIDATION_PREVIEW",
+            evidence={"candidate": operation, "preview": preview_operation},
+        ))
+
+    preview_hash = preview.get("payload_sha256")
+    if is_provided(preview_hash) and is_provided(payload_sha256) \
+            and str(preview_hash).lower() != str(payload_sha256).lower():
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PREVIEW_PAYLOAD_MISMATCH",
+            "Preview payload_sha256 does not match the current candidate payload.",
+            "VALIDATION_PREVIEW",
+            evidence={"candidate": payload_sha256, "preview": preview_hash},
+        ))
+
+    for field in ("seller_id", "marketplace_id", "sku", "product_type"):
+        if is_provided(preview.get(field)) and is_provided(scope.get(field)) \
+                and str(preview.get(field)) != str(scope.get(field)):
+            binding_valid = False
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "PREVIEW_SCOPE_MISMATCH",
+                f"Preview {field} does not match the diagnostic scope.",
+                "VALIDATION_PREVIEW",
+                evidence={"field": field, "expected": scope.get(field), "actual": preview.get(field)},
+            ))
+
+    http_status = preview.get("http_status")
+    if http_status is not None and (not isinstance(http_status, int) or not 200 <= http_status < 300):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "VALIDATION_PREVIEW_HTTP_STATUS_INVALID",
+            "Preview HTTP status is not a successful 2xx response.",
+            "VALIDATION_PREVIEW",
+            evidence=http_status,
+        ))
+
+    preview_status = str(preview.get("status") or "").upper()
+    if preview_status == "INVALID":
+        if not any(row["status"] == OFFICIAL_ERROR and row["source"] == "VALIDATION_PREVIEW"
+                   for row in rows):
+            rows.append(finding(
+                OFFICIAL_ERROR,
+                "VALIDATION_PREVIEW_INVALID",
+                "Amazon preview status is INVALID but no parseable ERROR issue was returned.",
+                "VALIDATION_PREVIEW",
+                evidence={"submission_id": preview.get("submission_id")},
+            ))
+    elif preview_status == "ACCEPTED":
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PREVIEW_MODE_MISMATCH",
+            "ACCEPTED belongs to a real submission response, not a VALIDATION_PREVIEW pass.",
+            "VALIDATION_PREVIEW",
+            evidence={"status": preview_status, "submission_id": preview.get("submission_id")},
+        ))
+    elif preview_status != "VALID":
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "VALIDATION_PREVIEW_STATUS_UNKNOWN",
+            "VALIDATION_PREVIEW status is missing or unknown.",
+            "VALIDATION_PREVIEW",
+            evidence=preview_status,
+        ))
+
+    preview_passed = preview_status == "VALID" and binding_valid and not any(
+        row["status"] in {OFFICIAL_ERROR, SYSTEM_ERROR} for row in rows
+    )
+    return rows, preview_passed, normalized_candidate
+
+
+def calculate_gate(rows: list[dict[str, Any]], sources: set[str], evaluated: bool,
+                   pass_value: str = "PASS") -> str:
+    relevant = [row for row in rows if row["source"] in sources]
+    if any(row["status"] == OFFICIAL_ERROR for row in relevant):
+        return "BLOCK"
+    if any(row["status"] == SYSTEM_ERROR for row in relevant):
+        return "UNKNOWN"
+    if any(row["status"] == OFFICIAL_WARNING for row in relevant):
+        return "REVIEW"
+    return pass_value if evaluated else "NOT_EVALUATED"
+
+
+def decide_release(current_gate: str, candidate_gate: str, candidate: dict[str, Any],
+                   rows: list[dict[str, Any]]) -> tuple[str, list[str]]:
+    if candidate_gate == "BLOCK":
+        return "BLOCK", ["CANDIDATE_PREVIEW_BLOCKED"]
+    if candidate_gate == "UNKNOWN":
+        if current_gate == "BLOCK":
+            return "BLOCK", ["CURRENT_BLOCKER_AND_CANDIDATE_UNKNOWN"]
+        return "UNKNOWN", ["CANDIDATE_PREVIEW_UNKNOWN"]
+    if candidate_gate == "NOT_EVALUATED":
+        if current_gate == "BLOCK":
+            return "BLOCK", ["CURRENT_BLOCKER_WITHOUT_VALID_CANDIDATE_PREVIEW"]
+        return "NOT_EVALUATED", ["CANDIDATE_PREVIEW_NOT_EVALUATED"]
+    if candidate_gate == "REVIEW":
+        if current_gate == "BLOCK":
+            return "BLOCK", ["CURRENT_BLOCKER_AND_CANDIDATE_REQUIRES_REVIEW"]
+        return "REVIEW", ["CANDIDATE_PREVIEW_REQUIRES_REVIEW"]
+
+    operation = str(candidate.get("operation") or "").upper()
+    if current_gate == "UNKNOWN":
+        return "UNKNOWN", ["CURRENT_LISTING_EVIDENCE_UNKNOWN"]
+    if current_gate == "BLOCK":
+        if any(row["status"] == SYSTEM_ERROR and row["source"] in OFFICIAL_SOURCES for row in rows):
+            return "BLOCK", ["CURRENT_BLOCKER_AND_OFFICIAL_VALIDATION_INCOMPLETE"]
+        if operation == "PATCH":
+            touched = {str(value) for value in candidate.get("touched_attributes") or []}
+            uncovered = {
+                str(row.get("attribute") or "<unknown>")
+                for row in rows
+                if row["status"] == OFFICIAL_ERROR
+                and row["source"] in {"LISTINGS_ITEMS", "PTD"}
+                and str(row.get("attribute") or "<unknown>") not in touched
+            }
+            if uncovered:
+                return "REVIEW", ["PATCH_DOES_NOT_COVER_CURRENT_BLOCKERS"]
+        return "REVIEW", ["CURRENT_LISTING_HAS_HISTORICAL_BLOCKERS"]
+    if current_gate == "REVIEW":
+        return "REVIEW", ["CURRENT_LISTING_REQUIRES_REVIEW"]
+    if operation == "PATCH" and current_gate == "NOT_EVALUATED":
+        return "REVIEW", ["PATCH_DOES_NOT_ESTABLISH_FULL_LISTING_STATE"]
+
+    return "PASS", ["BOUND_CANDIDATE_PREVIEW_VALID"]
 
 
 def diagnose(data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
-        return finalize({}, {}, [finding(
+        return finalize({}, {}, {}, [finding(
             SYSTEM_ERROR,
             "INPUT_INVALID",
             "The input root must be a JSON object.",
             "INPUT",
             evidence=data,
-        )], False)
+        )], False, False)
 
     scope = data.get("scope") or {}
     content = data.get("content") or {}
     official = data.get("official") or {}
     if not isinstance(scope, dict) or not isinstance(content, dict) or not isinstance(official, dict):
-        return finalize({}, {}, [finding(
+        return finalize({}, {}, {}, [finding(
             SYSTEM_ERROR,
             "INPUT_SECTIONS_INVALID",
             "scope, content, and official must be JSON objects.",
             "INPUT",
-        )], False)
+        )], False, False)
 
     rows: list[dict[str, Any]] = []
     missing_identity = [name for name in ("seller_id", "marketplace_id", "sku")
@@ -375,6 +692,7 @@ def diagnose(data: Any) -> dict[str, Any]:
     }
 
     listing_issues = official.get("listing_issues")
+    listing_issues_evaluated = False
     if listing_issues is None:
         rows.append(finding(
             NOT_EVALUATED,
@@ -390,78 +708,76 @@ def diagnose(data: Any) -> dict[str, Any]:
             "LISTINGS_ITEMS",
         ))
     else:
+        listing_issues_evaluated = True
         rows.extend(classify_official_issue(issue, "LISTINGS_ITEMS") for issue in listing_issues)
 
-    preview = official.get("validation_preview")
-    preview_ran = isinstance(preview, dict) and preview.get("ran") is True
-    preview_passed = False
-    if not preview_ran:
-        rows.append(finding(
-            NOT_EVALUATED,
-            "VALIDATION_PREVIEW_NOT_RUN",
-            "Listings Items VALIDATION_PREVIEW was not completed.",
-            "VALIDATION_PREVIEW",
-        ))
-    elif not isinstance(preview.get("issues", []), list):
-        rows.append(finding(
-            SYSTEM_ERROR,
-            "VALIDATION_PREVIEW_ISSUES_INVALID",
-            "VALIDATION_PREVIEW issues are not an array.",
-            "VALIDATION_PREVIEW",
-        ))
-    else:
-        rows.extend(classify_official_issue(issue, "VALIDATION_PREVIEW")
-                    for issue in preview.get("issues", []))
-        preview_status = str(preview.get("status") or "").upper()
-        if preview_status == "INVALID":
-            if not any(row["status"] == OFFICIAL_ERROR and row["source"] == "VALIDATION_PREVIEW"
-                       for row in rows):
-                rows.append(finding(
-                    OFFICIAL_ERROR,
-                    "VALIDATION_PREVIEW_INVALID",
-                    "Amazon preview status is INVALID but no parseable ERROR issue was returned.",
-                    "VALIDATION_PREVIEW",
-                    evidence={"submission_id": preview.get("submission_id")},
-                ))
-        elif preview_status in {"VALID", "ACCEPTED"}:
-            preview_passed = True
-        else:
-            rows.append(finding(
-                SYSTEM_ERROR,
-                "VALIDATION_PREVIEW_STATUS_UNKNOWN",
-                "VALIDATION_PREVIEW status is missing or unknown.",
-                "VALIDATION_PREVIEW",
-                evidence=preview_status,
-            ))
+    preview_rows, preview_passed, candidate = evaluate_validation_preview(
+        scope, data.get("candidate"), official.get("validation_preview")
+    )
+    rows.extend(preview_rows)
 
-    rows.extend(evaluate_ptd(content, official.get("ptd")))
+    ptd_rows, ptd_evaluated = evaluate_ptd(content, official.get("ptd"))
+    rows.extend(ptd_rows)
     rows.extend(evaluate_images(content))
-    report = finalize(scope, coverage, rows, preview_passed)
+    report = finalize(
+        scope,
+        coverage,
+        candidate,
+        rows,
+        listing_issues_evaluated or ptd_evaluated,
+        preview_passed,
+    )
     report["data_as_of"] = data.get("data_as_of")
+    preview = official.get("validation_preview")
+    report["validation_preview"] = {
+        key: preview.get(key)
+        for key in (
+            "ran", "mode", "operation", "payload_sha256", "seller_id", "marketplace_id",
+            "sku", "product_type", "request_id", "submission_id", "requested_at",
+            "responded_at", "http_status", "status",
+        )
+        if isinstance(preview, dict) and key in preview
+    }
     return report
 
 
-def finalize(scope: dict[str, Any], coverage: dict[str, Any], rows: list[dict[str, Any]],
+def finalize(scope: dict[str, Any], coverage: dict[str, Any], candidate: dict[str, Any],
+             rows: list[dict[str, Any]], current_evaluated: bool,
              preview_passed: bool) -> dict[str, Any]:
     counts = Counter(row["status"] for row in rows)
-    official_sources = {"INPUT", "LISTINGS_ITEMS", "PTD", "VALIDATION_PREVIEW"}
-    official_system_error = any(
-        row["status"] == SYSTEM_ERROR and row["source"] in official_sources
+    current_gate = calculate_gate(
+        rows,
+        {"LISTINGS_ITEMS", "PTD"},
+        current_evaluated,
+        pass_value="NO_KNOWN_OFFICIAL_ISSUES",
+    )
+    candidate_gate = calculate_gate(
+        rows,
+        {"VALIDATION_PREVIEW"},
+        preview_passed,
+        pass_value="PASS",
+    )
+    release_decision, release_reasons = decide_release(current_gate, candidate_gate, candidate, rows)
+    official_incomplete = any(
+        row["status"] in {NOT_EVALUATED, SYSTEM_ERROR} and row["source"] in OFFICIAL_SOURCES
         for row in rows
     )
-    if official_system_error:
-        gate = "UNKNOWN"
-    elif counts[OFFICIAL_ERROR]:
-        gate = "BLOCK"
-    elif counts[OFFICIAL_WARNING]:
-        gate = "REVIEW"
-    elif preview_passed:
-        gate = "PASS_OFFICIAL_CHECKS"
-    else:
-        gate = "NOT_EVALUATED"
+    operation = str(candidate.get("operation") or "").upper() or None
     return {
         "scope": scope,
-        "gate": gate,
+        "candidate": candidate,
+        "current_listing_gate": current_gate,
+        "candidate_preview_gate": candidate_gate,
+        "release_decision": release_decision,
+        "release_reasons": release_reasons,
+        # Compatibility field retained for 1.0.x consumers.
+        "gate": "PASS_OFFICIAL_CHECKS" if release_decision == "PASS" else release_decision,
+        "official_scope": {
+            "operation": operation,
+            "coverage": "FULL" if operation == "PUT" else "PARTIAL" if operation == "PATCH" else "UNKNOWN",
+            "touched_attributes": candidate.get("touched_attributes") if operation == "PATCH" else None,
+        },
+        "official_validation_completeness": "INCOMPLETE" if official_incomplete else "COMPLETE",
         "coverage": coverage,
         "counts": {state: counts.get(state, 0) for state in ALL_STATES},
         "findings": rows,
@@ -482,12 +798,12 @@ def main() -> int:
         raw = args.file.read_text(encoding="utf-8") if args.file else args.data
         report = diagnose(json.loads(raw))
     except Exception as exc:
-        report = finalize({}, {}, [finding(
+        report = finalize({}, {}, {}, [finding(
             SYSTEM_ERROR,
             "INPUT_READ_ERROR",
             f"Could not read or parse input: {type(exc).__name__}: {exc}",
             "INPUT",
-        )], False)
+        )], False, False)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if report["counts"][SYSTEM_ERROR]:
         return 2

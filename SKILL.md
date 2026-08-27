@@ -4,7 +4,7 @@ description: "Diagnose Amazon Listing content with evidence from Listings Items 
 license: MIT
 metadata:
   category: ecommerce/amazon
-  version: 1.0.0
+  version: 1.0.1
   upstream: buluslan/amazon-listing-doctor
 ---
 
@@ -38,23 +38,25 @@ Do not output an “Amazon official CDQ score,” “A9 index score,” “COSMO
 ## Workflow
 
 1. Normalize seller Listing data. Catalog merged values may be supporting context but must not replace seller-contributed attributes.
-2. Prefer current Listings Items attributes/issues and the applicable PTD. Use `VALIDATION_PREVIEW` only when a candidate payload needs official pre-submission validation; it calls Amazon but does not persist the payload.
-3. Run the deterministic classifier:
+2. Prefer current Listings Items attributes/issues and the applicable PTD. Keep current-state evidence separate from candidate `VALIDATION_PREVIEW` evidence.
+3. Bind every completed preview to the exact candidate using `mode=VALIDATION_PREVIEW`, `PUT/PATCH`, seller, marketplace, Seller SKU, product type, requirements, parentage level, and a matching SHA-256 payload digest. A real submission status such as `ACCEPTED` is not a preview pass.
+4. Run the deterministic classifier:
 
    ```bash
    python scripts/diagnose_listing.py --file listing.json
    ```
 
    Exit codes: `0` no official error/system failure; `1` official error; `2` system failure.
-4. Optionally add semantic advice for intent coverage (`use_case`, `audience`, `goal`, `constraint`) and buyer-question coverage (compatibility, specifications, use, durability, and value concerns). Cite Listing evidence; do not invent product facts from common sense, reviews, or competitors.
-5. Render [the report template](assets/report-template.md). Include identity, data timestamp, official findings, internal advice, missing evidence, and actions with completion and recheck criteria.
+5. Read `current_listing_gate`, `candidate_preview_gate`, and `release_decision` independently. Known official errors remain visible even when another evidence source fails; use `official_validation_completeness` to show incomplete validation.
+6. Optionally add semantic advice for intent coverage (`use_case`, `audience`, `goal`, `constraint`) and buyer-question coverage (compatibility, specifications, use, durability, and value concerns). Cite Listing evidence; do not invent product facts from common sense, reviews, or competitors.
+7. Render [the report template](assets/report-template.md). Include identity, data timestamp, official findings, internal advice, missing evidence, and actions with completion and recheck criteria.
 
 ## Safety Boundaries
 
 - Diagnosis does not authorize a real PATCH, feed submission, production database write, or automatic rewrite.
-- A passing `VALIDATION_PREVIEW` is not a persisted Amazon acceptance. `ACCEPTED` is not proof that an issue is resolved; verify against a later complete Listing snapshot.
+- A passing `VALIDATION_PREVIEW` is not a persisted Amazon acceptance. `ACCEPTED` identifies a real submission response and must be classified as a preview-mode mismatch.
 - PTD and Listing requirements change. Do not turn fixed title lengths, bullet counts, or static category lists into universal official rules.
-- Only `OFFICIAL_ERROR` blocks the same candidate payload. `HEURISTIC_ADVICE` remains advisory.
+- Only candidate-bound official evidence can pass a candidate. A current Listing blocker and a valid candidate preview are separate facts and require an explicit release decision.
 - If official preview was not run, state that official pre-submission validation is incomplete.
 
 Lead with the outcome: official blockers, completeness of official validation, and the three most important actions. Then show evidence, gaps, and recheck criteria.

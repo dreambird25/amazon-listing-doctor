@@ -4,6 +4,8 @@
 
 本仓库不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置，可作为 ERP/运营系统的公共参考实现。
 
+当前版本：**v1.0.1**。本版修复候选预检证据绑定与门禁语义，详见 [`CHANGELOG.md`](CHANGELOG.md)。
+
 ## 为什么改造
 
 固定 CDQ/A9/COSMO/Alexa 分数不能证明 Amazon 是否接受 Listing，也不能预测关键词收录、排名、流量或 Rufus 推荐。新版采用以下权威链路：
@@ -36,6 +38,13 @@ Amazon 官方资料：
 | `NOT_EVALUATED` | 数据、Schema、权限或元数据不足 | 无法判断 |
 | `SYSTEM_ERROR` | API、解析或检查异常 | 门禁未知 |
 
+报告不会再把当前 Listing、候选 Payload 和最终发布判断混成一个结果，而是分别输出：
+
+- `current_listing_gate`：当前 Listings Items issues 与当前内容的 PTD 结果。
+- `candidate_preview_gate`：与具体候选 Payload 绑定的 `VALIDATION_PREVIEW` 结果。
+- `release_decision`：结合 PUT/PATCH 范围后的保守发布判断。
+- `official_validation_completeness`：官方证据链是否完整；已知 ERROR 不会被其他系统异常覆盖。
+
 ## 数据来源
 
 数据可以来自多种渠道，不要求必须直接连接 SP-API：
@@ -59,7 +68,17 @@ Amazon 官方资料：
     "seller_id": "SELLER_ID",
     "marketplace_id": "MARKETPLACE_ID",
     "sku": "SELLER_SKU",
-    "product_type": "PRODUCT_TYPE"
+    "product_type": "PRODUCT_TYPE",
+    "requirements": "LISTING",
+    "parentage_level": "CHILD",
+    "locale": "en_US"
+  },
+  "candidate": {
+    "operation": "PUT",
+    "requirements": "LISTING",
+    "parentage_level": "CHILD",
+    "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "created_at": "2026-01-01T00:00:00Z"
   },
   "content": {
     "title": "Example title",
@@ -67,7 +86,23 @@ Amazon 官方资料：
   },
   "official": {
     "listing_issues": [],
-    "validation_preview": {"ran": true, "status": "VALID", "issues": []},
+    "validation_preview": {
+      "ran": true,
+      "mode": "VALIDATION_PREVIEW",
+      "operation": "PUT",
+      "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seller_id": "SELLER_ID",
+      "marketplace_id": "MARKETPLACE_ID",
+      "sku": "SELLER_SKU",
+      "product_type": "PRODUCT_TYPE",
+      "request_id": "REQUEST_ID",
+      "submission_id": "PREVIEW_ID",
+      "requested_at": "2026-01-01T00:00:01Z",
+      "responded_at": "2026-01-01T00:00:02Z",
+      "http_status": 200,
+      "status": "VALID",
+      "issues": []
+    },
     "ptd": {
       "status": "FRESH",
       "schema_checksum": "SCHEMA_CHECKSUM",
@@ -87,6 +122,8 @@ python scripts/diagnose_listing.py --file listing.json
 ```
 
 脚本只使用 Python 标准库，不联网、不写数据。输入输出详见 [`references/report-contract.md`](references/report-contract.md)。需要自动接入 SP-API、Excel 或其他系统时，可在外部实现转换器或公开适配器契约，见 [`references/erp-integration.md`](references/erp-integration.md)。
+
+`payload_sha256` 必须由接入方对实际候选 Payload 的规范化 JSON 计算；示例中的重复字符只是格式占位。只有 mode、PUT/PATCH、身份范围与两侧 hash 全部一致，`candidate_preview_gate` 才可能为 `PASS`。Amazon 返回的 `ACCEPTED` 属于真实提交响应，不是预检通过。
 
 ## 能做与不能做
 

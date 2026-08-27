@@ -14,6 +14,7 @@ REQUIRED = (
     "SKILL.md",
     "README.md",
     "README_EN.md",
+    "CHANGELOG.md",
     "LICENSE",
     "agents/openai.yaml",
     "assets/report-template.md",
@@ -43,6 +44,8 @@ def validate_skill() -> None:
         fail("SKILL.md name is invalid")
     if not re.search(r"(?m)^description:\s+.+$", frontmatter):
         fail("SKILL.md description is missing")
+    if not re.search(r"(?m)^\s+version:\s+1\.0\.1\s*$", frontmatter):
+        fail("SKILL.md version is not 1.0.1")
 
 
 def validate_public_boundary() -> None:
