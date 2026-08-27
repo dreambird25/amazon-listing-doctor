@@ -1,41 +1,48 @@
 # Content Quality Assessment Contract
 
-Use this contract only for the quality branch. It is internal, evidence-based advice and does not affect Amazon official gates.
+Use this contract only for the quality branch. It is internal, evidence-based advice and never changes Amazon official gates.
 
-## Ratings
+## Ratings and dimensions
 
-- `STRONG`: the supplied content addresses the dimension clearly and consistently with direct evidence.
-- `ADEQUATE`: the essential information is present, with limited gaps that do not obscure the main buyer decision.
-- `WEAK`: a material gap, ambiguity, repetition, or contradiction is visible in the supplied content.
-- `NOT_EVALUATED`: the source lacks enough evidence to judge the dimension.
+- `STRONG`: the supplied content addresses the dimension clearly and consistently.
+- `ADEQUATE`: essential information is present, with limited gaps.
+- `WEAK`: a material gap, ambiguity, repetition, or contradiction is visible.
+- `NOT_EVALUATED`: the bound source lacks enough evidence.
 
-## Dimensions
+The seven required dimensions are `content_completeness`, `clarity_and_readability`, `intent_coverage`, `buyer_question_coverage`, `image_information_coverage`, `cross_field_consistency`, and `localization_quality`.
 
-| Dimension | Judge from supplied evidence |
-|---|---|
-| `content_completeness` | Required/current attributes, title, bullets, description, images, variation and other supplied modules |
-| `clarity_and_readability` | Specific wording, repetition, keyword stuffing, grammar and information order |
-| `intent_coverage` | Use case, audience, goal and constraints explicitly supported by content |
-| `buyer_question_coverage` | Compatibility, size/specification, use, limitations, durability and value questions |
-| `image_information_coverage` | Main image identification plus supplied dimensions, feature, use, packaging and variation views |
-| `cross_field_consistency` | Agreement among title, attributes, bullets, description, images and variation data |
-| `localization_quality` | Locale, language, units and marketplace-appropriate expression |
+## Bind the assessment before judging content
 
-## Assessment JSON
+Run `diagnose_listing.py` first. Select exactly one `quality_contexts.CURRENT` or `quality_contexts.CANDIDATE` target, then copy these bindings into the assessment:
 
-Supply all seven dimensions. An evaluated dimension requires a concise rationale and at least one direct evidence reference. A `NOT_EVALUATED` dimension requires at least one `missing_evidence` item.
+- `assessment_target`;
+- `scope_fingerprint_sha256`;
+- `content_sha256`;
+- `evidence_manifest_sha256`;
+- `official_report_sha256`, emitted by the deterministic official report before quality fields are merged.
+
+Every evaluated dimension must cite a scalar value from the selected context's `evidence_manifest`. The citation includes the exact `field_path`, the supplied `quote_or_value`, and its canonical JSON `value_sha256`. `merge_report.py` recomputes the value hash and requires the path/hash pair to exist in the manifest. A self-declared quote is not evidence.
 
 ```json
 {
-  "assessment_version": "1.1",
+  "assessment_version": "1.2",
   "assessment_model": "MODEL_IDENTIFIER",
-  "prompt_version": "quality-v1.3.1",
+  "prompt_version": "quality-v1.3.2",
   "assessed_at": "2026-01-01T00:00:00Z",
+  "assessment_target": "CURRENT",
+  "scope_fingerprint_sha256": "SCOPE_SHA256",
+  "content_sha256": "CONTENT_SHA256",
+  "official_report_sha256": "REPORT_SHA256",
+  "evidence_manifest_sha256": "MANIFEST_SHA256",
   "dimensions": {
     "content_completeness": {
       "rating": "ADEQUATE",
-      "rationale": "The core content fields are present, but no variation evidence was supplied.",
-      "evidence": [{"field": "bullets", "quote_or_value": "Five supplied bullet points"}],
+      "rationale": "Core content is present, but variation evidence is absent.",
+      "evidence": [{
+        "field_path": "$.current_content.title",
+        "quote_or_value": "Synthetic example title",
+        "value_sha256": "VALUE_SHA256"
+      }],
       "missing_evidence": ["variation data"]
     },
     "clarity_and_readability": {
@@ -49,52 +56,44 @@ Supply all seven dimensions. An evaluated dimension requires a concise rationale
     "priority": "MEDIUM",
     "dimension": "content_completeness",
     "action": "Provide variation relationship data.",
-    "completion_criterion": "Parentage and variation attributes are present in the normalized input."
+    "completion_criterion": "Parentage and variation attributes are present."
   }],
   "limitations": ["No business performance metrics were supplied."]
 }
 ```
 
-The abbreviated example above shows field shape; the actual object must contain every dimension from the table.
+The abbreviated example shows field shape; the actual object must contain all seven dimensions. An evaluated dimension requires a rationale and manifest-bound evidence. `NOT_EVALUATED` requires `missing_evidence`. `assessed_at` must include a timezone.
 
-Write `rationale`, `action`, `current_problem`, and `suggested_value` in `report_locale`. Stable enum values and attribute names remain unchanged.
+## Derived verdict and evaluated-dimension average
 
-## Derived result
+`merge_report.py` derives the verdict independently of the numeric display aid:
 
-`scripts/merge_report.py` validates the assessment and derives:
+- any evaluated `WEAK` produces `NEEDS_IMPROVEMENT`;
+- seven `STRONG` ratings produce `STRONG`;
+- seven evaluated ratings without `WEAK` otherwise produce `ADEQUATE`;
+- an incomplete set without `WEAK` produces `PARTIALLY_EVALUATED`;
+- no evaluated dimension produces `NOT_EVALUATED`.
 
-- `NEEDS_IMPROVEMENT` when any evaluated dimension is `WEAK`.
-- `STRONG` when all seven dimensions are evaluated and all are `STRONG`.
-- `ADEQUATE` when all seven are evaluated, none is `WEAK`, and at least one is `ADEQUATE`.
-- `PARTIALLY_EVALUATED` when one to six dimensions are evaluated and none is `WEAK`.
-- `NOT_EVALUATED` when no dimension is evaluated.
+`executive_summary.evaluated_dimension_average` uses `STRONG=10`, `ADEQUATE=7`, and `WEAK=3`, rounded to one decimal place. Its status is:
 
-The script also emits `quality_evidence_completeness` as `COMPLETE`, `PARTIAL`, or `NONE`, preserves the four trace fields under `quality_assessment_trace`, and always emits `performance_verdict=NOT_EVALUATED`. `assessed_at` must be a timezone-aware ISO-8601 timestamp. Record the actual model identifier and prompt contract version so a changed evaluator can be detected in Golden Dataset regression.
+- `FULL`: all seven dimensions evaluated; `comparable=true`;
+- `PARTIAL`: five or six evaluated; the value is shown but `comparable=false`;
+- `NOT_SCORED`: fewer than five evaluated; no numeric value.
 
-### Internal 10-point score
+The result also exposes `dimension_mask` and `weak_dimensions`. A high average never hides a weak dimension or changes the verdict. `quality_score` remains a compatibility alias for the same object. The rubric is `1.1`, is marked `INTERNAL_HEURISTIC` and `official=false`, and does not predict indexing, ranking, traffic, conversion, or sales.
 
-`executive_summary.quality_score` is a deterministic display aid:
+## Exact suggested values
 
-- `STRONG = 10`, `ADEQUATE = 7`, and `WEAK = 3`.
-- Average only evaluated dimensions and round to one decimal place.
-- Emit `SCORED` only when at least five of seven dimensions are evaluated; otherwise emit `NOT_SCORED` with no numeric value.
-- Preserve `type=INTERNAL_HEURISTIC`, `official=false`, the evaluated-dimension count, and `rubric_version=1.0`.
+An exact `suggested_value` additionally requires:
 
-The score never changes an official gate. A high content score can coexist with an official blocker, incomplete validation, or unknown release decision. It is not an Amazon score and does not predict indexing, ranking, traffic, conversion, or sales.
+- `attribute` and `current_problem`;
+- `source_evidence` entries with manifest-bound `field_path`, `quote_or_value`, and `value_sha256` already cited by an evaluated dimension;
+- `fact_bindings`, each containing a literal `fact`, its `source_path`, and `source_value_sha256`;
+- every bound fact must occur in the suggested value;
+- `completion_criterion`.
 
-### Exact suggested values
-
-An action may include an exact `suggested_value` only when it also contains:
-
-- `attribute`: the field to change;
-- `current_problem`: the observed defect;
-- `source_evidence`: at least one supplied fact whose `field` and `quote_or_value` exactly match evidence already cited by an evaluated dimension;
-- `completion_criterion`: how a reviewer will verify the change.
-
-The target dimension must have an evaluated rating. Do not generate an exact rewrite for a `NOT_EVALUATED` dimension. A suggested value is advisory, must not add unsupported claims, and must still pass the applicable PTD and a bound candidate `VALIDATION_PREVIEW`.
+The target dimension cannot be `NOT_EVALUATED`. Exact rewrites remain advisory and must pass the applicable PTD and a bound candidate `VALIDATION_PREVIEW`.
 
 ## Evidence discipline
 
-Quote only supplied Listing content or metadata. General product knowledge, competitor pages, reviews, and assumed buyer preferences are not evidence unless the user explicitly supplies them and the report labels their source. Keep recommendations tied to a rated dimension and include a checkable completion criterion.
-
-For multilingual content, apply [the localization calibration guide](localization-calibration.md). Do not downgrade correct marketplace language merely because its sentence structure, word length, punctuation, or units differ from English.
+Quote only the selected bound Listing context. General product knowledge, competitor pages, reviews, and assumed buyer preferences are not evidence. Keep recommendations tied to rated dimensions; choose the highest priority action before using dimension match as a tie-breaker. For multilingual content, apply [the localization calibration guide](localization-calibration.md).

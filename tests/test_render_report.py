@@ -1,6 +1,7 @@
 import ast
 import importlib.util
 import json
+import sys
 import unittest
 from pathlib import Path
 
@@ -12,63 +13,46 @@ SPEC = importlib.util.spec_from_file_location("render_report", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
+sys.path.insert(0, str(SCRIPT.parent))
+from quality_contract import build_quality_context, official_report_sha256, sha256_json
+from merge_report import merge_report
 
 
 class RenderReportTest(unittest.TestCase):
 
     def report(self):
+        scope = {
+            "seller_id": "SELLER_ID",
+            "marketplace_id": "MARKETPLACE_ID",
+            "sku": "SELLER_SKU",
+            "asin": "ASIN_PLACEHOLDER",
+            "product_type": "PRODUCT_TYPE",
+            "requirements": "LISTING",
+            "parentage_level": "CHILD",
+            "locale": "en_US",
+        }
+        content = {
+            "title": "Example Brand Bottle",
+            "attributes": {"capacity": [{"value": "24 oz"}]},
+        }
         report = {
-            "scope": {"asin": "ASIN_PLACEHOLDER"},
+            "scope": scope,
             "current_listing_gate": "NO_KNOWN_OFFICIAL_ISSUES",
             "candidate_preview_gate": "PASS",
             "candidate_local_validation_gate": "PASS",
             "release_decision": "PASS",
             "official_validation_completeness": "COMPLETE",
-            "executive_summary": {
-                "summary_version": "1.0",
-                "asin": "ASIN_PLACEHOLDER",
-                "official": {
-                    "current_listing_gate": "NO_KNOWN_OFFICIAL_ISSUES",
-                    "candidate_preview_gate": "PASS",
-                    "candidate_local_validation_gate": "PASS",
-                    "release_decision": "PASS",
-                    "validation_completeness": "COMPLETE"
-                },
-                "quality_verdict": "NEEDS_IMPROVEMENT",
-                "quality_score": {
-                    "status": "SCORED",
-                    "value": 8.0,
-                    "scale": 10,
-                    "type": "INTERNAL_HEURISTIC",
-                    "official": False,
-                    "evaluated_dimensions": 6,
-                    "total_dimensions": 7,
-                    "minimum_dimensions_required": 5,
-                    "rubric_version": "1.0"
-                },
-                "primary_reason": {
-                    "dimension": "clarity_and_readability",
-                    "rating": "WEAK",
-                    "text": "标题没有清楚表达已经验证的容量信息。"
-                },
-                "primary_action": {
-                    "priority": "HIGH",
-                    "dimension": "clarity_and_readability",
-                    "attribute": "item_name",
-                    "current_problem": "标题缺少容量。",
-                    "action": "重写标题并保留已验证事实。",
-                    "suggested_value": "Example Brand Bottle, 24 oz",
-                    "completion_criterion": "新标题通过 PTD 与候选预检。",
-                    "source_evidence": [{"field": "capacity", "quote_or_value": "24 oz"}],
-                    "rewrite_is_advisory": True
-                },
-                "performance_verdict": "NOT_EVALUATED",
-                "disclaimer": "Internal content-quality summary; not an Amazon official score."
+            "official_evidence_coverage": {},
+            "ptd_validation_coverage": {},
+            "counts": {},
+            "quality_contexts": {
+                "CURRENT": build_quality_context("CURRENT", scope, content),
             },
             "findings": [{
                 "status": "OFFICIAL_ERROR",
                 "code": "PTD_CONSTRAINT_VIOLATION",
                 "source": "PTD",
+                "applies_to_candidate": True,
                 "message": "Measured value violates the bound PTD constraint.",
             }],
         }
@@ -85,7 +69,11 @@ class RenderReportTest(unittest.TestCase):
             name: {
                 "rating": "STRONG",
                 "rationale": "The supplied content supports this dimension.",
-                "evidence": [{"field": "title", "quote_or_value": "Example title, 24 oz"}],
+                "evidence": [{
+                    "field_path": "$.current_content.title",
+                    "quote_or_value": "Example Brand Bottle",
+                    "value_sha256": sha256_json("Example Brand Bottle"),
+                }],
                 "missing_evidence": [],
             }
             for name in dimension_names
@@ -99,10 +87,15 @@ class RenderReportTest(unittest.TestCase):
             "rationale": "只提供了一张图片。",
         })
         assessment = {
-            "assessment_version": "1.1",
+            "assessment_version": "1.2",
             "assessment_model": "test-model",
-            "prompt_version": "quality-v1.3.1",
+            "prompt_version": "quality-v1.3.2",
             "assessed_at": "2026-01-01T00:00:00Z",
+            "assessment_target": "CURRENT",
+            "scope_fingerprint_sha256": report["quality_contexts"]["CURRENT"]["scope_fingerprint_sha256"],
+            "content_sha256": report["quality_contexts"]["CURRENT"]["content_sha256"],
+            "official_report_sha256": official_report_sha256(report),
+            "evidence_manifest_sha256": report["quality_contexts"]["CURRENT"]["evidence_manifest_sha256"],
             "dimensions": dimensions,
             "recommendations": [{
                 "priority": "HIGH",
@@ -112,17 +105,39 @@ class RenderReportTest(unittest.TestCase):
                 "action": "重写标题并保留已验证事实。",
                 "suggested_value": "Example Brand Bottle, 24 oz",
                 "completion_criterion": "新标题通过 PTD 与候选预检。",
-                "source_evidence": [{"field": "title", "quote_or_value": "Example title, 24 oz"}],
+                "source_evidence": [{
+                    "field_path": "$.current_content.attributes.capacity[0].value",
+                    "quote_or_value": "24 oz",
+                    "value_sha256": sha256_json("24 oz"),
+                }, {
+                    "field_path": "$.current_content.title",
+                    "quote_or_value": "Example Brand Bottle",
+                    "value_sha256": sha256_json("Example Brand Bottle"),
+                }],
+                "fact_bindings": [
+                    {
+                        "fact": "Example Brand Bottle",
+                        "source_path": "$.current_content.title",
+                        "source_value_sha256": sha256_json("Example Brand Bottle"),
+                    },
+                    {
+                        "fact": "24 oz",
+                        "source_path": "$.current_content.attributes.capacity[0].value",
+                        "source_value_sha256": sha256_json("24 oz"),
+                    },
+                ],
             }],
             "limitations": ["No business performance metrics were supplied."],
         }
-        report["merge_status"] = "OK"
-        report["quality_verdict"] = "NEEDS_IMPROVEMENT"
-        report["semantic_assessment"] = assessment
-        report["executive_summary"] = MODULE.build_executive_summary(
-            report, assessment, "NEEDS_IMPROVEMENT"
-        )
-        return report
+        capacity_evidence = {
+            "field_path": "$.current_content.attributes.capacity[0].value",
+            "quote_or_value": "24 oz",
+            "value_sha256": sha256_json("24 oz"),
+        }
+        assessment["dimensions"]["clarity_and_readability"]["evidence"].append(capacity_evidence)
+        merged, valid = merge_report(report, assessment)
+        self.assertTrue(valid)
+        return merged
 
     def test_chinese_labels_do_not_claim_publication_success(self):
         localized = MODULE.localize_report(self.report(), "zh-CN")
@@ -159,12 +174,21 @@ class RenderReportTest(unittest.TestCase):
         self.assertIn("PTD_CONSTRAINT_VIOLATION", markdown)
         self.assertIn("Amazon/引擎原始信息", markdown)
         self.assertIn("Measured value violates", markdown)
+        self.assertIn("七维内容质量明细", markdown)
+        self.assertIn("建议与证据", markdown)
+        self.assertIn("限制与未评估项", markdown)
+        self.assertIn("质量评估追踪", markdown)
+        self.assertIn("薄弱 (`WEAK`)", markdown)
 
     def test_default_markdown_is_concise_operational_summary(self):
         markdown = MODULE.render_markdown(self.report(), "zh-CN")
         self.assertIn("Amazon Listing 质检结论", markdown)
         self.assertIn("ASIN_PLACEHOLDER", markdown)
+        self.assertIn("MARKETPLACE_ID", markdown)
+        self.assertIn("SELLER_SKU", markdown)
         self.assertIn("8.0 / 10", markdown)
+        self.assertIn("完整七维评分", markdown)
+        self.assertIn("可横向比较: 是", markdown)
         self.assertIn("非 Amazon 官方评分", markdown)
         self.assertIn("官方验证完整度", markdown)
         self.assertIn("(`COMPLETE`)", markdown)

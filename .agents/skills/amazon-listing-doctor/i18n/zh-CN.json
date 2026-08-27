@@ -4,6 +4,11 @@
     "concise_title": "Amazon Listing 质检结论",
     "summary": "决策摘要",
     "findings": "诊断项",
+    "official_findings": "官方证据与诊断项",
+    "quality_dimensions": "七维内容质量明细",
+    "recommendations": "建议与证据",
+    "limitations": "限制与未评估项",
+    "quality_trace": "质量评估追踪",
     "original_message": "Amazon/引擎原始信息"
   },
   "fields": {
@@ -13,7 +18,13 @@
     "release_decision": "发布决策",
     "official_validation_completeness": "官方验证完整度",
     "asin": "ASIN",
+    "marketplace": "Marketplace",
+    "seller_sku": "Seller SKU",
     "quality_score": "内容质量评分",
+    "evaluated_dimension_average": "已评估维度平均分",
+    "score_status": "评分覆盖状态",
+    "comparable": "可横向比较",
+    "weak_dimensions": "弱项维度",
     "quality_verdict": "内容质量结论",
     "primary_reason": "主要原因",
     "primary_action": "建议行动",
@@ -24,7 +35,30 @@
     "dimensions": "已评估维度",
     "no_reason": "没有可用的内容质量理由",
     "no_action": "暂无基于证据的改写建议",
+    "yes": "是",
+    "no": "否",
+    "rating": "评级",
+    "rationale": "理由",
+    "evidence": "证据",
+    "missing_evidence": "缺失证据",
+    "priority": "优先级",
+    "dimension": "维度",
+    "limitations": "限制",
     "none": "无"
+  },
+  "score_status_labels": {
+    "FULL": "完整七维评分",
+    "PARTIAL": "部分维度评分，不可横向比较",
+    "NOT_SCORED": "证据不足，未评分"
+  },
+  "dimension_labels": {
+    "content_completeness": "内容完整度",
+    "clarity_and_readability": "清晰度与可读性",
+    "intent_coverage": "意图覆盖",
+    "buyer_question_coverage": "买家问题覆盖",
+    "image_information_coverage": "图片信息覆盖",
+    "cross_field_consistency": "跨字段一致性",
+    "localization_quality": "本地化质量"
   },
   "gate_labels": {
     "BLOCK": "阻止发布",
@@ -44,6 +78,7 @@
   "quality_labels": {
     "STRONG": "优秀",
     "ADEQUATE": "合格",
+    "WEAK": "薄弱",
     "NEEDS_IMPROVEMENT": "需要优化",
     "PARTIALLY_EVALUATED": "部分评估",
     "NOT_EVALUATED": "未评估"

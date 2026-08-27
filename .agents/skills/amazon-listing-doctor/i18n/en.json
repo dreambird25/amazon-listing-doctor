@@ -4,6 +4,11 @@
     "concise_title": "Amazon Listing quality conclusion",
     "summary": "Decision summary",
     "findings": "Findings",
+    "official_findings": "Official evidence and findings",
+    "quality_dimensions": "Seven-dimension quality detail",
+    "recommendations": "Recommendations and evidence",
+    "limitations": "Limitations and untested areas",
+    "quality_trace": "Quality assessment trace",
     "original_message": "Original message"
   },
   "fields": {
@@ -13,7 +18,13 @@
     "release_decision": "Release Decision",
     "official_validation_completeness": "Official Validation Completeness",
     "asin": "ASIN",
+    "marketplace": "Marketplace",
+    "seller_sku": "Seller SKU",
     "quality_score": "Content quality score",
+    "evaluated_dimension_average": "Evaluated-dimension average",
+    "score_status": "Score coverage status",
+    "comparable": "Comparable",
+    "weak_dimensions": "Weak dimensions",
     "quality_verdict": "Content quality verdict",
     "primary_reason": "Primary reason",
     "primary_action": "Recommended action",
@@ -24,7 +35,30 @@
     "dimensions": "Evaluated dimensions",
     "no_reason": "No content-quality reason is available",
     "no_action": "No evidence-grounded rewrite is available",
+    "yes": "Yes",
+    "no": "No",
+    "rating": "Rating",
+    "rationale": "Rationale",
+    "evidence": "Evidence",
+    "missing_evidence": "Missing evidence",
+    "priority": "Priority",
+    "dimension": "Dimension",
+    "limitations": "Limitations",
     "none": "None"
+  },
+  "score_status_labels": {
+    "FULL": "Full seven-dimension score",
+    "PARTIAL": "Partial score; not cross-comparable",
+    "NOT_SCORED": "Insufficient evidence; not scored"
+  },
+  "dimension_labels": {
+    "content_completeness": "Content completeness",
+    "clarity_and_readability": "Clarity and readability",
+    "intent_coverage": "Intent coverage",
+    "buyer_question_coverage": "Buyer-question coverage",
+    "image_information_coverage": "Image-information coverage",
+    "cross_field_consistency": "Cross-field consistency",
+    "localization_quality": "Localization quality"
   },
   "gate_labels": {
     "BLOCK": "Block",
@@ -44,6 +78,7 @@
   "quality_labels": {
     "STRONG": "Strong",
     "ADEQUATE": "Adequate",
+    "WEAK": "Weak",
     "NEEDS_IMPROVEMENT": "Needs improvement",
     "PARTIALLY_EVALUATED": "Partially evaluated",
     "NOT_EVALUATED": "Not evaluated"

@@ -2,6 +2,28 @@
 
 本项目采用语义化版本。版本记录描述公共契约和行为变化，不登记任何接入方私有实现或数据。
 
+## [1.3.2] - 2026-08-27
+
+### 结论与官方证据
+
+- `REVIEW` 时依据 `release_reasons` 先选择当前 Listing、候选 Preview 或本地 PTD 证据通道；适用于当前 Listing 的 `OFFICIAL_ERROR` 不再被候选警告或内容建议遮蔽。
+- 简洁官方原因只接受 `INPUT / LISTINGS_ITEMS / PTD / VALIDATION_PREVIEW` 来源，排除明确不适用的 finding，并保留真实 `finding_source`。
+- 默认身份升级为 `Marketplace + Seller SKU + ASIN`；非全部通过时显示候选 Preview 与本地校验门禁。
+
+### 语义评估绑定
+
+- 评估契约升级为 `assessment_version=1.2`，强制绑定 `CURRENT / CANDIDATE`、scope fingerprint、content hash、official report hash 和 evidence manifest hash。
+- 确定性引擎为当前与候选内容生成只含字段路径/值哈希的证据清单；每个评级证据必须匹配清单中的路径与值。
+- 精确 `suggested_value` 新增 `fact_bindings`，要求建议中的每个产品事实绑定到已评估、已验证的字段路径和值哈希。
+
+### 评分、详细视图与回归
+
+- 分数明确为“已评估维度平均分”：七维齐全为 `FULL/comparable=true`，五或六维为 `PARTIAL/comparable=false`，少于五维为 `NOT_SCORED`；新增 `dimension_mask` 和 `weak_dimensions`。
+- 首要质量行动先按 `HIGH / MEDIUM / LOW` 排序，再用主要原因维度作平局条件。
+- 详细 Markdown 视图现在包含默认简洁结论、官方 findings、七维评级/证据、建议、局限和完整评估哈希追溯。
+- 私有 Golden Dataset 新增 `--mode quality-summary`，回归 verdict、评分覆盖、弱项维度、首要原因/行动和精确建议权限；输出仍只包含聚合统计与哈希样本引用。
+- 行为测试增加到 87 个，新增绑定篡改、证据清单、完整/部分评分、弱项保留、官方来源过滤、行动优先级、详细视图和质量批量回归覆盖。
+
 ## [1.3.1] - 2026-08-27
 
 ### 默认用户结论

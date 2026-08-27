@@ -68,9 +68,13 @@ def localize_report(report: Any, locale: str) -> dict[str, Any]:
 def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
     scope = report.get("scope") if isinstance(report.get("scope"), dict) else {}
     official_reason = primary_official_finding(report)
-    return {
-        "summary_version": "1.0",
-        "asin": scope.get("asin"),
+    result = {
+        "summary_version": "1.1",
+        "identity": {
+            "marketplace_id": scope.get("marketplace_id"),
+            "seller_sku": scope.get("sku"),
+            "asin": scope.get("asin"),
+        },
         "official": {
             "current_listing_gate": report.get("current_listing_gate"),
             "candidate_preview_gate": report.get("candidate_preview_gate"),
@@ -79,16 +83,20 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
             "validation_completeness": report.get("official_validation_completeness"),
         },
         "quality_verdict": "NOT_EVALUATED",
-        "quality_score": {
+        "evaluated_dimension_average": {
             "status": "NOT_SCORED",
             "value": None,
+            "raw_evaluated_average": None,
             "scale": 10,
             "type": "INTERNAL_HEURISTIC",
             "official": False,
+            "comparable": False,
             "evaluated_dimensions": 0,
             "total_dimensions": 7,
             "minimum_dimensions_required": 5,
-            "rubric_version": "1.0",
+            "dimension_mask": [],
+            "weak_dimensions": [],
+            "rubric_version": "1.1",
             "not_scored_reason": "No validated semantic quality assessment was merged.",
         },
         "primary_reason": official_reason,
@@ -96,11 +104,13 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
         "performance_verdict": "NOT_EVALUATED",
         "disclaimer": "Internal content-quality summary; not an Amazon official score or performance prediction.",
     }
+    result["quality_score"] = copy.deepcopy(result["evaluated_dimension_average"])
+    return result
 
 
 def validated_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
     assessment = report.get("semantic_assessment")
-    if report.get("merge_status") != "OK" or validate_assessment(assessment):
+    if report.get("merge_status") != "OK" or validate_assessment(assessment, report):
         return fallback_executive_summary(report)
     verdict, _ = derive_quality(assessment["dimensions"])
     if report.get("quality_verdict") != verdict:
@@ -112,7 +122,7 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
     localized = localize_report(report, locale)
     summary = validated_executive_summary(report)
     messages = load_messages(locale)
-    score = summary.get("quality_score") or {}
+    score = summary.get("evaluated_dimension_average") or {}
     reason = summary.get("primary_reason") or {}
     action = summary.get("primary_action") or {}
     reason_text = str(reason.get("text") or messages["fields"]["no_reason"])
@@ -128,8 +138,9 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
             "quality_verdict": label(messages, "quality_labels", summary.get("quality_verdict")),
             "quality_score": (
                 f"{score.get('value')} / {score.get('scale')}"
-                if score.get("status") == "SCORED" else messages["fields"]["not_scored"]
+                if score.get("status") in {"FULL", "PARTIAL"} else messages["fields"]["not_scored"]
             ),
+            "score_status": label(messages, "score_status_labels", score.get("status")),
             "score_disclaimer": messages["fields"]["score_disclaimer"],
             "primary_reason": reason_text,
             "primary_action": (
@@ -151,26 +162,48 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
     messages = load_messages(locale)
     headings = messages["headings"]
     fields = messages["fields"]
-    score = summary.get("quality_score") or {}
+    score = summary.get("evaluated_dimension_average") or {}
     reason = summary.get("primary_reason") or {}
     action = summary.get("primary_action") or {}
-    asin = summary.get("asin") or "-"
+    identity = summary.get("identity") or {}
+    weak_dimensions = score.get("weak_dimensions") or []
+    weak_display = ", ".join(
+        label(messages, "dimension_labels", name) for name in weak_dimensions
+    ) or fields["none"]
     lines = [
         f"# {headings['concise_title']}",
         "",
-        f"- {fields['asin']}: `{asin}`",
+        f"- {fields['marketplace']}: `{identity.get('marketplace_id') or '-'}`",
+        f"- {fields['seller_sku']}: `{identity.get('seller_sku') or '-'}`",
+        f"- {fields['asin']}: `{identity.get('asin') or '-'}`",
         f"- {fields['current_listing']}: {display['current_listing_gate']} "
         f"(`{report.get('current_listing_gate')}`)",
+    ]
+    if report.get("release_decision") != "PASS" \
+            or report.get("candidate_preview_gate") != "PASS" \
+            or report.get("candidate_local_validation_gate") != "PASS":
+        lines.extend([
+            f"- {fields['candidate_preview']}: {display['candidate_preview_gate']} "
+            f"(`{report.get('candidate_preview_gate')}`)",
+            f"- {fields['candidate_local_validation']}: {display['candidate_local_validation_gate']} "
+            f"(`{report.get('candidate_local_validation_gate')}`)",
+        ])
+    lines.extend([
         f"- {fields['release_decision']}: {display['release_decision']} "
         f"(`{report.get('release_decision')}`)",
         f"- {fields['official_validation_completeness']}: "
         f"{display['official_validation_completeness']} "
         f"(`{report.get('official_validation_completeness')}`)",
-        f"- {fields['quality_score']}: {display['quality_score']}（{display['score_disclaimer']}）"
-        if locale == "zh-CN" else
-        f"- {fields['quality_score']}: {display['quality_score']} ({display['score_disclaimer']})",
+        f"- {fields['evaluated_dimension_average']}: {display['quality_score']}"
+        f"（{display['score_disclaimer']}）" if locale == "zh-CN" else
+        f"- {fields['evaluated_dimension_average']}: {display['quality_score']} "
+        f"({display['score_disclaimer']})",
+        f"- {fields['score_status']}: {display['score_status']} (`{score.get('status')}`)",
         f"- {fields['dimensions']}: {score.get('evaluated_dimensions', 0)} / "
         f"{score.get('total_dimensions', 7)}",
+        f"- {fields['weak_dimensions']}: {weak_display}",
+        f"- {fields['comparable']}: "
+        f"{fields['yes'] if score.get('comparable') else fields['no']}",
         f"- {fields['quality_verdict']}: {display['quality_verdict']} "
         f"(`{summary.get('quality_verdict')}`)",
         "",
@@ -181,7 +214,7 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
         f"## {fields['primary_action']}",
         "",
         str(display["primary_action"]),
-    ]
+    ])
     if action.get("suggested_value"):
         suggested_label = (
             f"{fields['suggested_value']}：" if locale == "zh-CN"
@@ -198,23 +231,7 @@ def render_detailed_markdown(report: dict[str, Any], locale: str) -> str:
     messages = load_messages(locale)
     headings = messages["headings"]
     fields = messages["fields"]
-    display = localized["display"]
-    lines = [
-        f"# {headings['title']}",
-        "",
-        f"## {headings['summary']}",
-        "",
-        f"- {fields['current_listing']}: {display['current_listing_gate']} (`{report.get('current_listing_gate')}`)",
-        f"- {fields['candidate_preview']}: {display['candidate_preview_gate']} (`{report.get('candidate_preview_gate')}`)",
-        f"- {fields['candidate_local_validation']}: {display['candidate_local_validation_gate']} "
-        f"(`{report.get('candidate_local_validation_gate')}`)",
-        f"- {fields['release_decision']}: {display['release_decision']} (`{report.get('release_decision')}`)",
-        f"- {fields['official_validation_completeness']}: {display['official_validation_completeness']} "
-        f"(`{report.get('official_validation_completeness')}`)",
-        "",
-        f"## {headings['findings']}",
-        "",
-    ]
+    lines = [render_concise_markdown(report, locale).rstrip(), "", f"## {headings['official_findings']}", ""]
     findings = localized.get("findings") or []
     if not findings:
         lines.append(f"- {fields['none']}")
@@ -224,6 +241,63 @@ def render_detailed_markdown(report: dict[str, Any], locale: str) -> str:
             f"(`{row.get('code')}` / `{row.get('source')}`)",
             f"  - {headings['original_message']}: {row.get('message_original')}",
         ])
+
+    assessment = report.get("semantic_assessment")
+    assessment_errors = validate_assessment(assessment, report)
+    if not assessment_errors:
+        lines.extend(["", f"## {headings['quality_dimensions']}", ""])
+        for name, row in assessment["dimensions"].items():
+            dimension_label = label(messages, "dimension_labels", name)
+            lines.append(
+                f"- **{dimension_label}** (`{name}`): "
+                f"{label(messages, 'quality_labels', row.get('rating'))} (`{row.get('rating')}`)"
+            )
+            if row.get("rationale"):
+                lines.append(f"  - {fields['rationale']}: {row['rationale']}")
+            for evidence in row.get("evidence") or []:
+                lines.append(
+                    f"  - {fields['evidence']}: `{evidence.get('field_path')}` = "
+                    f"{evidence.get('quote_or_value')}"
+                )
+            if row.get("missing_evidence"):
+                lines.append(
+                    f"  - {fields['missing_evidence']}: "
+                    + "; ".join(str(item) for item in row["missing_evidence"])
+                )
+
+        lines.extend(["", f"## {headings['recommendations']}", ""])
+        recommendations = assessment.get("recommendations") or []
+        if not recommendations:
+            lines.append(f"- {fields['none']}")
+        for recommendation in recommendations:
+            lines.append(
+                f"- **{recommendation.get('priority')} · "
+                f"{label(messages, 'dimension_labels', recommendation.get('dimension'))}**: "
+                f"{recommendation.get('action')}"
+            )
+            if recommendation.get("suggested_value"):
+                lines.append(
+                    f"  - {fields['suggested_value']}: {recommendation['suggested_value']}"
+                )
+            lines.append(
+                f"  - {fields['completion_criterion']}: "
+                f"{recommendation.get('completion_criterion')}"
+            )
+
+        lines.extend(["", f"## {headings['limitations']}", ""])
+        limitations = assessment.get("limitations") or []
+        lines.extend(f"- {item}" for item in limitations or [fields["none"]])
+
+        lines.extend(["", f"## {headings['quality_trace']}", ""])
+        for key in (
+            "assessment_version", "assessment_model", "prompt_version", "assessed_at",
+            "assessment_target", "scope_fingerprint_sha256", "content_sha256",
+            "official_report_sha256", "evidence_manifest_sha256",
+        ):
+            lines.append(f"- `{key}`: `{assessment.get(key)}`")
+    else:
+        lines.extend(["", f"## {headings['limitations']}", ""])
+        lines.append("- Quality assessment was not rendered because its binding is invalid.")
     return "\n".join(lines) + "\n"
 
 

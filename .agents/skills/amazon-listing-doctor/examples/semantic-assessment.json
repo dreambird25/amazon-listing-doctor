@@ -1,43 +1,72 @@
 {
-  "assessment_version": "1.1",
+  "assessment_version": "1.2",
   "assessment_model": "example-semantic-model",
-  "prompt_version": "quality-v1.3.1",
+  "prompt_version": "quality-v1.3.2",
   "assessed_at": "2026-01-01T00:00:03Z",
+  "assessment_target": "CURRENT",
+  "scope_fingerprint_sha256": "f3c5eef0a8e83663e754a246b48bc9508e64208d26a7d47d4abf69b2cfbac3fb",
+  "content_sha256": "cf2164ccd6be025569970edf7954d1969c54a9f73ae106b15fa24a2c35649f4a",
+  "official_report_sha256": "bc9380b8ce84c371d966e69f2183f7da8a0810e2dc0867cdf65637b3a9a27aaf",
+  "evidence_manifest_sha256": "ab2138998406117a45cec0e66369da1bf0c91974871eafa01d9c223a79bfeea9",
   "dimensions": {
     "content_completeness": {
       "rating": "WEAK",
       "rationale": "Core text is present, but variation, backend-term, and additional image evidence is absent.",
-      "evidence": [{"field": "content", "quote_or_value": "title, three bullets, description, and one image supplied"}],
+      "evidence": [{
+        "field_path": "$.current_content.title",
+        "quote_or_value": "Insulated Stainless Steel Water Bottle, 24 oz",
+        "value_sha256": "1914ff7686639b6721b4f36eac120befff2f2dc95261ef0d821af5fda1d971a8"
+      }],
       "missing_evidence": ["variation data", "backend search terms", "additional images"]
     },
     "clarity_and_readability": {
       "rating": "STRONG",
       "rationale": "The title states material, product type, and capacity without visible repetition.",
-      "evidence": [{"field": "title", "quote_or_value": "Insulated Stainless Steel Water Bottle, 24 oz"}],
+      "evidence": [{
+        "field_path": "$.current_content.title",
+        "quote_or_value": "Insulated Stainless Steel Water Bottle, 24 oz",
+        "value_sha256": "1914ff7686639b6721b4f36eac120befff2f2dc95261ef0d821af5fda1d971a8"
+      }],
       "missing_evidence": []
     },
     "intent_coverage": {
       "rating": "ADEQUATE",
       "rationale": "The content names commuting, workouts, and everyday hydration use cases.",
-      "evidence": [{"field": "description", "quote_or_value": "for commuting, workouts, and everyday hydration"}],
+      "evidence": [{
+        "field_path": "$.current_content.description",
+        "quote_or_value": "A reusable insulated bottle for commuting, workouts, and everyday hydration.",
+        "value_sha256": "d837f114f2af398ebf7ca3551c3430dd7df8bf6022be7872f9d493c9876a4efe"
+      }],
       "missing_evidence": ["explicit use limitations"]
     },
     "buyer_question_coverage": {
       "rating": "ADEQUATE",
       "rationale": "Capacity, lid behavior, insulation, and cup-holder fit are addressed.",
-      "evidence": [{"field": "bullets", "quote_or_value": "24 oz capacity with a narrow base for common cup holders"}],
+      "evidence": [{
+        "field_path": "$.current_content.bullets[2]",
+        "quote_or_value": "24 oz capacity with a narrow base for common cup holders.",
+        "value_sha256": "939ac1dc1c762a7442ad845d2d868a86f11155365347a4e8cfb6891a4b98f920"
+      }],
       "missing_evidence": ["care instructions"]
     },
     "image_information_coverage": {
       "rating": "WEAK",
       "rationale": "Only one main-image record is supplied, so use, feature, and packaging views are absent.",
-      "evidence": [{"field": "images", "quote_or_value": "one 1600x1600 main image"}],
+      "evidence": [{
+        "field_path": "$.current_content.images[0].url",
+        "quote_or_value": "https://example.invalid/main.jpg",
+        "value_sha256": "505c0f009799f426d51c9cc1f79cce6531cccc3c6e9cec39e5de60d30a4f8e50"
+      }],
       "missing_evidence": ["secondary image set"]
     },
     "cross_field_consistency": {
       "rating": "ADEQUATE",
       "rationale": "The supplied title, bullets, and description consistently describe a 24 oz insulated bottle.",
-      "evidence": [{"field": "title", "quote_or_value": "Insulated Stainless Steel Water Bottle, 24 oz"}],
+      "evidence": [{
+        "field_path": "$.current_content.title",
+        "quote_or_value": "Insulated Stainless Steel Water Bottle, 24 oz",
+        "value_sha256": "1914ff7686639b6721b4f36eac120befff2f2dc95261ef0d821af5fda1d971a8"
+      }],
       "missing_evidence": ["structured capacity attribute"]
     },
     "localization_quality": {

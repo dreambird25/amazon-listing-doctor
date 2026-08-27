@@ -30,4 +30,4 @@ Expected primary results:
 
 `listing-full-schema-valid.json` is fully synthetic and demonstrates the external validator attestation contract. Its `PASS` means the evidence conditions are met; it does not represent a real submission or publication.
 
-`semantic-assessment.json` demonstrates all seven quality dimensions. Merge it with a generated official report using `scripts/merge_report.py`. Generated reports are intentionally not committed because the scripts and tests are their source of truth.
+`semantic-assessment.json` demonstrates all seven quality dimensions and the v1.2 scope/content/report/manifest binding. It is bound specifically to the deterministic report generated from `listing-valid.json`; changing that input or report correctly makes the merge fail. Merge it with a freshly generated official report using `scripts/merge_report.py`. Generated reports are intentionally not committed because the scripts and tests are their source of truth.

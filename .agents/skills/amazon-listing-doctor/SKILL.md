@@ -4,7 +4,7 @@ description: "Diagnose Amazon seller Listings from JSON, Excel/CSV exports, or p
 license: MIT
 metadata:
   category: ecommerce/amazon
-  version: 1.3.1
+  version: 1.3.2
   upstream: buluslan/amazon-listing-doctor
 ---
 
@@ -39,21 +39,21 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
      --semantic-assessment semantic-assessment.json
    ```
 
-   This step is complete when all seven dimensions are present, every evaluated rating cites evidence, and the merge script returns `merge_status=OK`. Use the script-derived verdict and `executive_summary.quality_score`; do not invent or manually override a score. A score is emitted only when at least five dimensions are evaluated. It is an internal heuristic, never an Amazon score or a performance prediction.
+   This step is complete when the assessment selects `CURRENT` or `CANDIDATE`, binds the scope/content/official-report/evidence-manifest hashes emitted by the deterministic engine, all seven dimensions are present, every evaluated rating cites a manifest path and matching value hash, and the merge script returns `merge_status=OK`. Use the script-derived verdict and `executive_summary.evaluated_dimension_average`; do not invent or override a score. Five or six evaluated dimensions produce `PARTIAL` with `comparable=false`; only all seven produce `FULL` with `comparable=true`. It is an internal heuristic, never an Amazon score or performance prediction.
 5. Render in the user's language while preserving stable codes and Amazon's original message. `scope.locale` controls Listing evidence; `report_locale` controls display and must never change validation. For Chinese Markdown:
 
    ```bash
    python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown
    ```
 
-   The default view is the concise operational conclusion: ASIN, official gates and completeness, internal quality score, primary evidence-based reason, one action, and an optional suggested value. Use `--view detailed` when the user asks for findings or audit evidence:
+   The default view is the concise operational conclusion: Marketplace, Seller SKU, optional ASIN, relevant official gates and completeness, evaluated-dimension average with coverage/weak dimensions/comparability, primary evidence-based reason, one action, and an optional suggested value. In `REVIEW`, never let content advice or a candidate warning hide an applicable current official error. Use `--view detailed` when the user asks for findings or audit evidence:
 
    ```bash
    python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed
    ```
 
-   Write rationales, recommendations, and suggested values in `report_locale`. An exact suggested value is optional and requires the affected attribute, current problem, and direct source evidence. It remains advisory and must be rechecked against PTD and a bound candidate Preview. `PASS` means the current evidence conditions are met; never label it “published successfully.”
-6. For regression against a private Golden Dataset, use `scripts/evaluate_batch.py`. Never add raw private Listing records to this repository; commit only synthetic fixtures and non-identifying aggregate conclusions. Read [the private practice guide](references/private-golden-dataset.md) before sampling production-like data.
+   Detailed Markdown must include the concise conclusion, official findings, all seven quality dimensions, recommendations, limitations, and the assessment trace. Write rationales, recommendations, and suggested values in `report_locale`. An exact suggested value is optional and requires the affected attribute, current problem, manifest-bound source evidence, and per-fact bindings. It remains advisory and must be rechecked against PTD and a bound candidate Preview. `PASS` means the current evidence conditions are met; never label it “published successfully.”
+6. For regression against a private Golden Dataset, use `scripts/evaluate_batch.py`. The default mode regresses official gates; `--mode quality-summary` regresses the bound concise quality verdict, scoring coverage, weak dimensions, primary action, and suggested-value permission. Never add raw private Listing records to this repository; commit only synthetic fixtures and non-identifying aggregate conclusions. Read [the private practice guide](references/private-golden-dataset.md) before sampling production-like data.
 
 ## Evidence interpretation
 

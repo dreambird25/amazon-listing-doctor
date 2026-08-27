@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 
@@ -154,6 +155,33 @@ class DiagnoseListingTest(unittest.TestCase):
         self.assertEqual("REVIEW", report["gate"])
         self.assertEqual("INCOMPLETE", report["official_validation_completeness"])
         self.assertGreater(report["counts"][MODULE.HEURISTIC_ADVICE], 0)
+
+    def test_quality_context_is_deterministic_and_contains_no_raw_values(self):
+        data = self.base()
+        first_report = MODULE.diagnose(data)
+        second_report = MODULE.diagnose(data)
+        first = first_report["quality_contexts"]["CURRENT"]
+        second = second_report["quality_contexts"]["CURRENT"]
+        self.assertEqual(first, second)
+        self.assertEqual(first_report["official_report_sha256"], second_report["official_report_sha256"])
+        self.assertEqual(64, len(first_report["official_report_sha256"]))
+        self.assertEqual("CURRENT", first["assessment_target"])
+        self.assertEqual(64, len(first["content_sha256"]))
+        self.assertIn("$.current_content.title", {
+            item["field_path"] for item in first["evidence_manifest"]
+        })
+        self.assertNotIn("Valid title", json.dumps(first))
+
+    def test_candidate_quality_context_is_separate_from_current_content(self):
+        data = self.base()
+        data["current_content"] = data.pop("content")
+        data["candidate"]["content"] = {"title": "Candidate title"}
+        report = MODULE.diagnose(data)
+        contexts = report["quality_contexts"]
+        self.assertNotEqual(contexts["CURRENT"]["content_sha256"], contexts["CANDIDATE"]["content_sha256"])
+        self.assertIn("$.candidate.content.title", {
+            item["field_path"] for item in contexts["CANDIDATE"]["evidence_manifest"]
+        })
 
     def test_missing_preview_is_not_pass(self):
         data = self.base()

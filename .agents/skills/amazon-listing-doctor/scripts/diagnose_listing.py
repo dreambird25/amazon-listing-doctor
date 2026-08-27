@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from quality_contract import build_quality_context, official_report_sha256
+
+
 OFFICIAL_ERROR = "OFFICIAL_ERROR"
 OFFICIAL_WARNING = "OFFICIAL_WARNING"
 HEURISTIC_ADVICE = "HEURISTIC_ADVICE"
@@ -1655,6 +1659,13 @@ def diagnose(data: Any) -> dict[str, Any]:
         "candidate_content_present": isinstance(candidate_content, dict),
         "attribute_alias_count": len(aliases),
     }
+    report["quality_contexts"] = {
+        "CURRENT": build_quality_context("CURRENT", scope, current_content),
+    }
+    if isinstance(candidate_content, dict):
+        report["quality_contexts"]["CANDIDATE"] = build_quality_context(
+            "CANDIDATE", scope, candidate_content
+        )
     preview = official.get("validation_preview")
     report["validation_preview"] = {
         key: preview.get(key)
@@ -1666,6 +1677,7 @@ def diagnose(data: Any) -> dict[str, Any]:
         )
         if isinstance(preview, dict) and key in preview
     }
+    report["official_report_sha256"] = official_report_sha256(report)
     return report
 
 

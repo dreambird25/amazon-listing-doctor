@@ -2,18 +2,20 @@
 
 ## 默认简洁结论
 
-- ASIN：`ASIN_PLACEHOLDER / -`
+- Marketplace / Seller SKU / ASIN：分别展示；ASIN 缺失时为 `-`
 - 当前 Listing：展示标签 + 稳定 gate
 - 发布决策：展示标签 + 稳定 gate
 - 官方验证完整度：展示标签 + `COMPLETE / INCOMPLETE`
-- 内容质量评分：`N.N / 10` 或“未评分”，并注明“内部启发式评分，非 Amazon 官方评分”
+- 已评估维度平均分：`N.N / 10` 或“未评分”，并注明“内部启发式评分，非 Amazon 官方评分”
+- 评分覆盖：`FULL / PARTIAL / NOT_SCORED`；只有 `FULL` 可横向比较
 - 已评估维度：`N / 7`
+- 弱项维度：列出所有 `WEAK`，不得被高平均分隐藏
 - 内容质量结论：展示标签 + 稳定 verdict
 - 主要原因：一个有直接 Listing 证据的理由
 - 建议行动：一个可检查完成条件的行动
 - 建议改为：仅在目标维度已评估且有产品事实来源时展示
 
-默认简洁结论不能隐藏官方 `BLOCK`、`UNKNOWN` 或 `INCOMPLETE`。需要审计证据时继续输出下列详细报告。
+默认简洁结论不能隐藏官方 `BLOCK`、`UNKNOWN` 或 `INCOMPLETE`。`REVIEW` 且当前 Listing 有适用的 `OFFICIAL_ERROR` 时，必须先展示该错误。需要审计证据时，详细视图必须包含简洁结论、官方 findings、七维明细、建议、局限和评估追溯。
 
 ## 结论
 

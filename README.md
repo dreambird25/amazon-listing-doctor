@@ -4,7 +4,7 @@
 
 这是 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的公共 Fork，不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
-当前版本：**v1.3.1**。本版增加默认简洁质检结论、透明的内部 10 分制内容质量分和有证据约束的建议改写，详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前版本：**v1.3.2**。本版将默认简洁结论与 Marketplace、Seller SKU、内容/官方报告哈希和字段证据清单绑定，并区分完整可比评分与部分不可比平均分，详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 它回答三个不同问题
 
@@ -59,7 +59,7 @@ https://github.com/dreambird25/amazon-listing-doctor/tree/main/.agents/skills/am
 
 ## 生产使用结论
 
-v1.3.1 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。
+v1.3.2 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。
 
 无人值守自动放行仍需由接入系统补齐：完整 Draft 2019-09 + Amazon vocabulary PTD 校验、Preview 独立限流、授权提交和提交后 issues/status 对账。Amazon 明确说明 Preview 适合少量 Listing，不是高吞吐生产主链路。官方依据见 [`生产就绪研究`](docs/production-readiness-research.md)，接入门禁见 [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)。
 
@@ -89,6 +89,7 @@ python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/e
 python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown
 python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed
 python scripts/evaluate_batch.py --file private-golden-dataset.jsonl
+python scripts/evaluate_batch.py --file private-quality-golden.jsonl --mode quality-summary
 ```
 
 第一条命令默认输出简洁用户结论；`--view detailed` 输出完整审计报告。`scope.locale` 决定 Listing 校验语言；`report_locale`/`--lang` 只决定展示语言。候选 Preview 的 `PASS` 展示为“候选预检通过”，绝不写成“发布成功”。批量回归只输出聚合门禁和哈希化样本引用，不回显原始 Listing 内容。
@@ -104,15 +105,19 @@ python .agents/skills/amazon-listing-doctor/scripts/merge_report.py \
 默认简洁层的形态如下（占位数据）：
 
 ```text
+Marketplace：MARKETPLACE_ID
+Seller SKU：SELLER_SKU
 ASIN：ASIN_PLACEHOLDER
 发布决策：需要人工复核
-内容质量评分：8.0 / 10（内部启发式评分，非 Amazon 官方评分）
+已评估维度平均分：8.0 / 10（内部启发式评分，非 Amazon 官方评分）
+评分覆盖：FULL（7/7，可横向比较）
+弱项维度：清晰度与可读性、图片信息覆盖
 主要原因：标题没有清楚表达已经验证的容量信息。
 建议行动：重写标题并保留已验证事实。
 建议改为：Example Brand Bottle, 24 oz
 ```
 
-评分规则固定为 `STRONG=10`、`ADEQUATE=7`、`WEAK=3`，只对已评估维度求平均并保留一位小数；少于五个维度有直接证据时显示“未评分”。存在适用于当前 Listing/候选的官方错误、证据异常或警告时，它优先成为首要原因与行动。精确改写必须逐项匹配已评估维度引用的产品事实，仍需通过适用 PTD 与候选预检，不能凭常识编造属性。
+评分规则固定为 `STRONG=10`、`ADEQUATE=7`、`WEAK=3`，只对已评估维度求平均并保留一位小数；七维齐全才是 `FULL/comparable=true`，五或六维是 `PARTIAL/comparable=false`，少于五维为 `NOT_SCORED`。高平均分不会隐藏 `WEAK` 维度。存在适用于当前 Listing/候选的官方错误、证据异常或警告时，它优先成为首要原因与行动。语义评估必须绑定目标内容与官方报告哈希；精确改写还必须逐个事实匹配证据清单中的字段路径与值哈希，不能凭常识编造属性。
 
 相关契约：
 

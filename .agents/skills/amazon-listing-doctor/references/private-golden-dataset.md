@@ -33,6 +33,36 @@ python scripts/evaluate_batch.py --file /private/path/listing-golden.jsonl
 
 The command emits aggregate gate distributions, expectation mismatch counts, deterministic-rerun status, and SHA-256-truncated sample references. It never echoes input content or raw sample identifiers.
 
+## Quality-summary regression
+
+To regress the default user conclusion, store the bound `assessment_version=1.2` assessment and only non-identifying expected outcomes alongside each private input:
+
+```json
+{
+  "sample_id": "PRIVATE_REFERENCE",
+  "input": {"scope": {}, "official": {}},
+  "assessment": {"assessment_version": "1.2"},
+  "expected_quality": {
+    "quality_verdict": "NEEDS_IMPROVEMENT",
+    "score_status": "FULL",
+    "score_range": [7.0, 9.0],
+    "comparable": true,
+    "weak_dimensions": ["clarity_and_readability"],
+    "primary_reason_dimension": "clarity_and_readability",
+    "primary_action_dimension": "clarity_and_readability",
+    "suggested_value_allowed": false
+  }
+}
+```
+
+Run:
+
+```bash
+python scripts/evaluate_batch.py --file /private/path/listing-quality-golden.jsonl --mode quality-summary
+```
+
+The quality mode re-runs diagnosis and merge, checks the expected verdict/coverage/weak-dimension/action contract, and emits only aggregate quality distributions plus hashed sample references. The default `official-gates` mode remains compatible with existing gate datasets.
+
 ## Public reporting boundary
 
 Safe public statements include sample count, broad marketplace families, deterministic consistency, engine error count, and generalized evidence gaps. Do not publish per-Listing output or cross-tabulations that can re-identify a small seller portfolio.
