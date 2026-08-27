@@ -36,6 +36,19 @@ Amazon 官方资料：
 | `NOT_EVALUATED` | 数据、Schema、权限或元数据不足 | 无法判断 |
 | `SYSTEM_ERROR` | API、解析或检查异常 | 门禁未知 |
 
+## 数据来源
+
+数据可以来自多种渠道，不要求必须直接连接 SP-API：
+
+- JSON 文件或用户粘贴的结构化内容。
+- Excel、CSV、Seller Central 导出等表格文件。
+- Amazon SP-API 的 Listings Items、Product Type Definitions 和 `VALIDATION_PREVIEW` 返回。
+- ERP、数据仓库、数据库只读视图或其他内部/第三方 API。
+
+不同来源先通过转换器、ERP 适配器或 Agent 映射成统一 JSON，再交给诊断脚本。当前脚本直接读取 JSON，不直接解析 `.xlsx`；Excel/CSV 需先转换或映射。
+
+数据渠道不决定证据等级。只有可追溯的 Amazon issues、PTD Schema 和 `VALIDATION_PREVIEW` 才归类为官方证据；普通文件、人工输入和第三方数据仍可用于内容检查，但不能自动标记为 Amazon 官方通过。
+
 ## 快速使用
 
 准备 JSON：
@@ -73,7 +86,7 @@ Amazon 官方资料：
 python scripts/diagnose_listing.py --file listing.json
 ```
 
-脚本只使用 Python 标准库，不联网、不写数据。输入输出详见 [`references/report-contract.md`](references/report-contract.md)。ERP 集成只需要实现公开适配器契约，见 [`references/erp-integration.md`](references/erp-integration.md)。
+脚本只使用 Python 标准库，不联网、不写数据。输入输出详见 [`references/report-contract.md`](references/report-contract.md)。需要自动接入 SP-API、Excel 或其他系统时，可在外部实现转换器或公开适配器契约，见 [`references/erp-integration.md`](references/erp-integration.md)。
 
 ## 能做与不能做
 

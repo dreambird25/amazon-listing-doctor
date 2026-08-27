@@ -22,13 +22,26 @@ Amazon documentation:
 - [Manage Product Listings with SP-API](https://developer-docs.amazon.com/sp-api/lang-en_EN/docs/manage-product-listings-guide)
 - [SP-API release notes for `VALIDATION_PREVIEW`](https://developer-docs.amazon.com/sp-api/docs/sp-api-release-notes)
 
+## Data sources
+
+Input can come from multiple channels; a direct SP-API connection is not required:
+
+- JSON files or pasted structured content.
+- Excel, CSV, Seller Central exports, or similar tabular files.
+- Amazon SP-API Listings Items, Product Type Definitions, and `VALIDATION_PREVIEW` responses.
+- ERP systems, data warehouses, read-only database views, or other internal/third-party APIs.
+
+A converter, ERP adapter, or Agent must normalize each source into the common JSON contract before diagnosis. The current script reads JSON directly and does not parse `.xlsx`; Excel and CSV inputs must first be converted or mapped.
+
+The channel does not determine the evidence level. Only traceable Amazon issues, PTD schemas, and `VALIDATION_PREVIEW` results are official evidence. Files, manual input, and third-party data can still support content checks but cannot automatically prove an Amazon pass.
+
 ## Run
 
 ```bash
 python scripts/diagnose_listing.py --file listing.json
 ```
 
-The checker uses only the Python standard library, makes no network calls, and performs no writes. See [`references/report-contract.md`](references/report-contract.md) for the data contract and [`references/erp-integration.md`](references/erp-integration.md) for a vendor-neutral adapter design.
+The checker uses only the Python standard library, makes no network calls, and performs no writes. See [`references/report-contract.md`](references/report-contract.md) for the data contract and [`references/erp-integration.md`](references/erp-integration.md) for a vendor-neutral adapter design for SP-API, Excel, and other systems.
 
 ## Breaking changes from upstream 0.4.x
 
