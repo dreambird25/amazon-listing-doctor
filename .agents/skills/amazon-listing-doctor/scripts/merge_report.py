@@ -27,6 +27,8 @@ OFFICIAL_REPORT_FIELDS = {
     "candidate_preview_gate",
     "release_decision",
     "official_validation_completeness",
+    "official_evidence_coverage",
+    "ptd_validation_coverage",
     "counts",
     "findings",
 }

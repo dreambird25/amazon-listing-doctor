@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,31 @@ CONTENT_ATTRIBUTE_MAP = {
 }
 OFFICIAL_SOURCES = {"INPUT", "LISTINGS_ITEMS", "PTD", "VALIDATION_PREVIEW"}
 SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def parse_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def request_fingerprint(scope: dict[str, Any], candidate: dict[str, Any]) -> str:
+    material = {
+        "marketplace_id": scope.get("marketplace_id"),
+        "mode": "VALIDATION_PREVIEW",
+        "operation": str(candidate.get("operation") or "").upper(),
+        "payload_sha256": str(candidate.get("payload_sha256") or "").lower(),
+        "product_type": scope.get("product_type"),
+        "requirements": candidate.get("requirements"),
+        "seller_id": scope.get("seller_id"),
+        "sku": scope.get("sku"),
+    }
+    canonical = json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def finding(status: str, code: str, message: str, source: str,
@@ -114,20 +141,176 @@ def classify_official_issue(issue: Any, source: str) -> dict[str, Any]:
     )
 
 
+def mark_unbound_official_findings(
+        rows: list[dict[str, Any]], source: str, applicability_field: str
+) -> None:
+    for row in rows:
+        if row["source"] == source and row["status"] in {OFFICIAL_ERROR, OFFICIAL_WARNING}:
+            row[applicability_field] = False
+
+
+def evaluate_listing_snapshot(
+        scope: dict[str, Any], official: dict[str, Any], evaluation_time: datetime | None
+) -> tuple[list[dict[str, Any]], bool, dict[str, Any]]:
+    snapshot = official.get("listing_snapshot")
+    legacy_issues = official.get("listing_issues")
+    if snapshot is None:
+        if legacy_issues is None:
+            return [finding(
+                NOT_EVALUATED,
+                "LISTING_SNAPSHOT_MISSING",
+                "A traceable Listings Items snapshot was not supplied.",
+                "LISTINGS_ITEMS",
+            )], False, {}
+        if not isinstance(legacy_issues, list):
+            return [finding(
+                SYSTEM_ERROR,
+                "LISTING_ISSUES_INVALID",
+                "Legacy listing_issues evidence is not an array.",
+                "LISTINGS_ITEMS",
+            )], False, {"legacy": True}
+        rows = [classify_official_issue(issue, "LISTINGS_ITEMS") for issue in legacy_issues]
+        rows.append(finding(
+            NOT_EVALUATED,
+            "LISTING_SNAPSHOT_TRACEABILITY_MISSING",
+            "Legacy listing_issues were classified, but identity, includedData, request, and time binding are missing.",
+            "LISTINGS_ITEMS",
+        ))
+        return rows, False, {"legacy": True, "issue_count": len(legacy_issues)}
+
+    if not isinstance(snapshot, dict):
+        return [finding(
+            SYSTEM_ERROR,
+            "LISTING_SNAPSHOT_INVALID",
+            "Listings Items snapshot evidence is not an object.",
+            "LISTINGS_ITEMS",
+        )], False, {}
+
+    rows: list[dict[str, Any]] = []
+    binding_valid = True
+    required = (
+        "seller_id", "marketplace_id", "sku", "request_id", "fetched_at",
+        "expires_at", "included_data", "issues",
+    )
+    missing = [name for name in required if name not in snapshot or not is_provided(snapshot.get(name))]
+    if isinstance(snapshot.get("issues"), list):
+        missing = [name for name in missing if name != "issues"]
+    if missing:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "LISTING_SNAPSHOT_EVIDENCE_INCOMPLETE",
+            "The Listings Items snapshot is missing required traceability fields.",
+            "LISTINGS_ITEMS",
+            evidence={"missing": missing},
+        ))
+
+    for field in ("seller_id", "marketplace_id", "sku"):
+        if is_provided(snapshot.get(field)) and is_provided(scope.get(field)) \
+                and str(snapshot.get(field)) != str(scope.get(field)):
+            binding_valid = False
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "LISTING_SNAPSHOT_SCOPE_MISMATCH",
+                f"Snapshot {field} does not match the diagnostic scope.",
+                "LISTINGS_ITEMS",
+                evidence={"field": field, "expected": scope.get(field), "actual": snapshot.get(field)},
+            ))
+
+    included_data = snapshot.get("included_data")
+    if not isinstance(included_data, list) or not all(isinstance(item, str) for item in included_data):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "LISTING_SNAPSHOT_INCLUDED_DATA_INVALID",
+            "included_data must be an array of strings.",
+            "LISTINGS_ITEMS",
+        ))
+    elif "issues" not in {item.lower() for item in included_data}:
+        binding_valid = False
+        rows.append(finding(
+            NOT_EVALUATED,
+            "LISTING_SNAPSHOT_ISSUES_NOT_INCLUDED",
+            "The snapshot did not request issues, so an empty issue array is not a pass.",
+            "LISTINGS_ITEMS",
+        ))
+
+    issues = snapshot.get("issues")
+    if not isinstance(issues, list):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "LISTING_SNAPSHOT_ISSUES_INVALID",
+            "Snapshot issues are not an array.",
+            "LISTINGS_ITEMS",
+        ))
+        issues = []
+    else:
+        rows.extend(classify_official_issue(issue, "LISTINGS_ITEMS") for issue in issues)
+
+    fetched_at = parse_timestamp(snapshot.get("fetched_at"))
+    expires_at = parse_timestamp(snapshot.get("expires_at"))
+    if fetched_at is None or expires_at is None:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "LISTING_SNAPSHOT_TIMESTAMP_INVALID",
+            "Snapshot timestamps must be timezone-aware ISO-8601 values.",
+            "LISTINGS_ITEMS",
+        ))
+    elif fetched_at > expires_at:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "LISTING_SNAPSHOT_TIME_ORDER_INVALID",
+            "Snapshot fetched_at is later than expires_at.",
+            "LISTINGS_ITEMS",
+        ))
+    elif evaluation_time is None:
+        binding_valid = False
+    elif evaluation_time > expires_at:
+        binding_valid = False
+        rows.append(finding(
+            NOT_EVALUATED,
+            "LISTING_SNAPSHOT_STALE",
+            "The Listings Items snapshot expired before this diagnostic run.",
+            "LISTINGS_ITEMS",
+            evidence={"expires_at": snapshot.get("expires_at")},
+        ))
+
+    if not binding_valid:
+        mark_unbound_official_findings(rows, "LISTINGS_ITEMS", "applies_to_current")
+    evaluated = binding_valid and not any(
+        row["status"] in {NOT_EVALUATED, SYSTEM_ERROR} for row in rows
+    )
+    summary = {
+        "request_id": snapshot.get("request_id"),
+        "fetched_at": snapshot.get("fetched_at"),
+        "expires_at": snapshot.get("expires_at"),
+        "included_data": included_data if isinstance(included_data, list) else None,
+        "issue_count": len(issues),
+    }
+    return rows, evaluated, summary
+
+
 def ptd_coverage(status: str, supported: int = 0, unsupported: int = 0,
-                 evaluated: int = 0) -> dict[str, Any]:
+                 evaluated: int = 0, scope_bound: bool = False,
+                 time_valid: bool = False) -> dict[str, Any]:
     return {
         "mode": "LIGHTWEIGHT_SUBSET",
         "status": status,
         "supported_constraint_count": supported,
         "unsupported_constraint_count": unsupported,
         "evaluated_constraint_count": evaluated,
+        "scope_bound": scope_bound,
+        "time_valid": time_valid,
         "full_schema_validation": False,
     }
 
 
 def evaluate_ptd(
-        content: dict[str, Any], ptd: Any
+        scope: dict[str, Any], content: dict[str, Any], ptd: Any,
+        evaluation_time: datetime | None,
 ) -> tuple[list[dict[str, Any]], bool, dict[str, Any]]:
     if ptd is None:
         return [finding(
@@ -142,6 +325,7 @@ def evaluate_ptd(
         )], False, ptd_coverage("SYSTEM_ERROR")
 
     rows: list[dict[str, Any]] = []
+    traceability_valid = True
     status = str(ptd.get("status") or "UNAVAILABLE").upper()
     if status == "UNAVAILABLE":
         return [finding(
@@ -150,6 +334,10 @@ def evaluate_ptd(
             "The current PTD schema is unavailable; attribute limits were not inferred.",
             "PTD",
         )], False, ptd_coverage("NOT_EVALUATED")
+    if status == "AVAILABLE":
+        status = "FRESH"
+    elif status == "STALE":
+        status = "STALE_WITHIN_GRACE"
     if status not in {"FRESH", "STALE_WITHIN_GRACE"}:
         return [finding(
             SYSTEM_ERROR,
@@ -167,6 +355,132 @@ def evaluate_ptd(
             evidence={"schema_checksum": ptd.get("schema_checksum")},
         ))
 
+    ptd_scope = ptd.get("scope")
+    scope_bound = True
+    if not isinstance(ptd_scope, dict):
+        scope_bound = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PTD_SCOPE_MISSING",
+            "PTD evidence must record the exact request scope.",
+            "PTD",
+        ))
+        ptd_scope = {}
+    required_ptd_scope = (
+        "seller_id", "marketplace_id", "product_type", "product_type_version",
+        "requirements", "requirements_enforced", "parentage_level", "locale",
+    )
+    missing_ptd_scope = [name for name in required_ptd_scope if not is_provided(ptd_scope.get(name))]
+    if missing_ptd_scope:
+        scope_bound = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PTD_SCOPE_INCOMPLETE",
+            "PTD request scope is incomplete.",
+            "PTD",
+            evidence={"missing": missing_ptd_scope},
+        ))
+    requirements_enforced = str(ptd_scope.get("requirements_enforced") or "").upper()
+    if requirements_enforced and requirements_enforced not in {"ENFORCED", "NOT_ENFORCED"}:
+        scope_bound = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PTD_REQUIREMENTS_ENFORCED_INVALID",
+            "PTD requirements_enforced must be ENFORCED or NOT_ENFORCED.",
+            "PTD",
+            evidence=requirements_enforced,
+        ))
+    for field in ("seller_id", "marketplace_id", "product_type", "requirements", "parentage_level", "locale"):
+        if is_provided(ptd_scope.get(field)) and is_provided(scope.get(field)) \
+                and str(ptd_scope.get(field)) != str(scope.get(field)):
+            scope_bound = False
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "PTD_SCOPE_MISMATCH",
+                f"PTD {field} does not match the diagnostic scope.",
+                "PTD",
+                evidence={"field": field, "expected": scope.get(field), "actual": ptd_scope.get(field)},
+            ))
+    if is_provided(ptd_scope.get("product_type_version")) and is_provided(ptd.get("resolved_version")) \
+            and str(ptd_scope.get("product_type_version")) != str(ptd.get("resolved_version")):
+        scope_bound = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PTD_VERSION_MISMATCH",
+            "PTD scope version does not match resolved_version.",
+            "PTD",
+            evidence={
+                "scope_version": ptd_scope.get("product_type_version"),
+                "resolved_version": ptd.get("resolved_version"),
+            },
+        ))
+    missing_traceability = [
+        name for name in (
+            "schema_checksum", "meta_schema_checksum", "resolved_version",
+            "latest", "release_candidate", "fetched_at", "expires_at",
+        )
+        if not is_provided(ptd.get(name))
+    ]
+    if missing_traceability:
+        traceability_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PTD_TRACEABILITY_INCOMPLETE",
+            "PTD evidence is missing version, checksum, or time metadata.",
+            "PTD",
+            evidence={"missing": missing_traceability},
+        ))
+    for field in ("latest", "release_candidate"):
+        if field in ptd and not isinstance(ptd.get(field), bool):
+            traceability_valid = False
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "PTD_VERSION_FLAG_INVALID",
+                f"PTD {field} must be a boolean.",
+                "PTD",
+                evidence={"field": field},
+            ))
+
+    fetched_at = parse_timestamp(ptd.get("fetched_at"))
+    expires_at = parse_timestamp(ptd.get("expires_at"))
+    timestamps_valid = (
+        fetched_at is not None and expires_at is not None and fetched_at <= expires_at
+    )
+    time_valid = timestamps_valid and evaluation_time is not None
+    if not timestamps_valid:
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PTD_TIMESTAMP_INVALID",
+            "PTD fetched_at and expires_at must be ordered, timezone-aware ISO-8601 values.",
+            "PTD",
+        ))
+    elif evaluation_time is None:
+        rows.append(finding(
+            NOT_EVALUATED,
+            "PTD_FRESHNESS_NOT_EVALUATED",
+            "data_as_of is required to determine whether the PTD evidence is current.",
+            "PTD",
+        ))
+    elif status == "FRESH" and evaluation_time > expires_at:
+        time_valid = False
+        rows.append(finding(
+            NOT_EVALUATED,
+            "PTD_EXPIRED",
+            "The PTD schema expired before this diagnostic run.",
+            "PTD",
+            evidence={"expires_at": ptd.get("expires_at")},
+        ))
+    elif status == "STALE_WITHIN_GRACE":
+        grace_deadline = parse_timestamp(ptd.get("stale_grace_deadline"))
+        if grace_deadline is None or evaluation_time is None or evaluation_time > grace_deadline:
+            time_valid = False
+            rows.append(finding(
+                NOT_EVALUATED,
+                "PTD_STALE_GRACE_INVALID",
+                "Stale PTD evidence lacks a valid grace deadline for this diagnostic run.",
+                "PTD",
+            ))
+
     constraints = ptd.get("constraints")
     if not isinstance(constraints, dict) or not constraints:
         rows.append(finding(
@@ -175,7 +489,11 @@ def evaluate_ptd(
             "The PTD input contains no executable constraints.",
             "PTD",
         ))
-        return rows, False, ptd_coverage("NOT_EVALUATED")
+        if not (scope_bound and traceability_valid and time_valid):
+            mark_unbound_official_findings(rows, "PTD", "applies_to_current")
+        return rows, False, ptd_coverage(
+            "NOT_EVALUATED", scope_bound=scope_bound, time_valid=time_valid
+        )
 
     supported_types = {"MAX_LENGTH", "MIN_LENGTH", "MAX_ITEMS", "MIN_ITEMS"}
     supported_units = {"CODE_POINTS", "UTF8_BYTES", "ITEMS"}
@@ -262,13 +580,20 @@ def evaluate_ptd(
                         "resolved_version": ptd.get("resolved_version"),
                     },
                 ))
-    ptd_complete = not any(row["status"] in {NOT_EVALUATED, SYSTEM_ERROR} for row in rows)
+    binding_valid = scope_bound and traceability_valid and time_valid
+    if not binding_valid:
+        mark_unbound_official_findings(rows, "PTD", "applies_to_current")
+    ptd_complete = binding_valid and not any(
+        row["status"] in {NOT_EVALUATED, SYSTEM_ERROR} for row in rows
+    )
     coverage_status = "EVALUATED_SUBSET" if ptd_complete else "PARTIALLY_EVALUATED"
     return rows, ptd_complete, ptd_coverage(
         coverage_status,
         supported=supported_count,
         unsupported=unsupported_count,
         evaluated=evaluated_count,
+        scope_bound=scope_bound,
+        time_valid=time_valid,
     )
 
 
@@ -286,6 +611,7 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
 
     rows: list[dict[str, Any]] = []
     main_identified = False
+    main_count = 0
     for index, image in enumerate(images):
         if not isinstance(image, dict):
             rows.append(finding(
@@ -296,17 +622,50 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
                 evidence={"index": index},
             ))
             continue
-        is_main = image.get("is_main") is True
+        is_main_value = image.get("is_main")
+        if is_main_value is not None and not isinstance(is_main_value, bool):
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "IMAGE_METADATA_TYPE_INVALID",
+                "is_main must be true, false, or null.",
+                "HEURISTIC",
+                evidence={"index": index, "field": "is_main"},
+            ))
+        is_main = is_main_value is True
+        if is_main:
+            main_count += 1
         main_identified = main_identified or is_main
         width, height = image.get("width"), image.get("height")
         label = "main image" if is_main else f"image {index + 1}"
-        if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
+        dimensions_missing = width is None or height is None
+        dimensions_type_valid = all(
+            isinstance(value, int) and not isinstance(value, bool)
+            for value in (width, height)
+            if value is not None
+        )
+        if not dimensions_type_valid:
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "IMAGE_METADATA_TYPE_INVALID",
+                "width and height must be positive integers or null.",
+                "HEURISTIC",
+                evidence={"index": index, "field": "width/height"},
+            ))
+        elif dimensions_missing:
             rows.append(finding(
                 NOT_EVALUATED,
                 "IMAGE_DIMENSIONS_MISSING",
                 f"The {label} has no valid dimensions; resolution and aspect ratio were not evaluated.",
                 "HEURISTIC",
                 evidence={"index": index, "url": image.get("url")},
+            ))
+        elif width <= 0 or height <= 0:
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "IMAGE_DIMENSIONS_INVALID",
+                "width and height must be positive when provided.",
+                "HEURISTIC",
+                evidence={"index": index, "width": width, "height": height},
             ))
         else:
             longest = max(width, height)
@@ -335,7 +694,16 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
                     evidence={"index": index, "width": width, "height": height},
                 ))
 
-        if image.get("watermark") is None:
+        watermark = image.get("watermark")
+        if watermark is not None and not isinstance(watermark, bool):
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "IMAGE_METADATA_TYPE_INVALID",
+                "watermark must be true, false, or null.",
+                "HEURISTIC",
+                evidence={"index": index, "field": "watermark"},
+            ))
+        elif watermark is None:
             rows.append(finding(
                 NOT_EVALUATED,
                 "IMAGE_WATERMARK_UNKNOWN",
@@ -343,7 +711,7 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
                 "HEURISTIC",
                 evidence={"index": index, "url": image.get("url")},
             ))
-        elif image.get("watermark") is True:
+        elif watermark is True:
             rows.append(finding(
                 HEURISTIC_ADVICE,
                 "IMAGE_WATERMARK_PRESENT",
@@ -353,7 +721,16 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
             ))
 
         if is_main:
-            if image.get("white_background") is None:
+            white_background = image.get("white_background")
+            if white_background is not None and not isinstance(white_background, bool):
+                rows.append(finding(
+                    SYSTEM_ERROR,
+                    "IMAGE_METADATA_TYPE_INVALID",
+                    "white_background must be true, false, or null.",
+                    "HEURISTIC",
+                    evidence={"index": index, "field": "white_background"},
+                ))
+            elif white_background is None:
                 rows.append(finding(
                     NOT_EVALUATED,
                     "MAIN_IMAGE_BACKGROUND_UNKNOWN",
@@ -361,7 +738,7 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
                     "HEURISTIC",
                     evidence={"index": index, "url": image.get("url")},
                 ))
-            elif image.get("white_background") is False:
+            elif white_background is False:
                 rows.append(finding(
                     HEURISTIC_ADVICE,
                     "MAIN_IMAGE_NOT_WHITE",
@@ -376,11 +753,20 @@ def evaluate_images(content: dict[str, Any]) -> list[dict[str, Any]]:
             "Images were supplied, but none was identified as the main image; main-image checks were not run.",
             "HEURISTIC",
         ))
+    elif main_count > 1:
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "MULTIPLE_MAIN_IMAGES",
+            "More than one image is marked as the main image.",
+            "HEURISTIC",
+            evidence={"main_image_count": main_count},
+        ))
     return rows
 
 
 def evaluate_validation_preview(
-        scope: dict[str, Any], candidate: Any, preview: Any
+        scope: dict[str, Any], candidate: Any, preview: Any,
+        evaluation_time: datetime | None, ptd_fetched_at: datetime | None,
 ) -> tuple[list[dict[str, Any]], bool, dict[str, Any]]:
     """Return findings, pass state, and normalized candidate scope."""
     if preview is not None and not isinstance(preview, dict):
@@ -427,7 +813,9 @@ def evaluate_validation_preview(
         ))
         candidate = {}
 
-    required_candidate = ("operation", "requirements", "parentage_level", "payload_sha256")
+    required_candidate = (
+        "operation", "requirements", "parentage_level", "payload_sha256", "created_at",
+    )
     missing_candidate = [name for name in required_candidate if not is_provided(candidate.get(name))]
     if missing_candidate:
         binding_valid = False
@@ -447,6 +835,7 @@ def evaluate_validation_preview(
         "payload_sha256": candidate.get("payload_sha256"),
         "touched_attributes": candidate.get("touched_attributes"),
         "created_at": candidate.get("created_at"),
+        "request_fingerprint_sha256": request_fingerprint(scope, candidate),
     }
     if operation and operation not in {"PUT", "PATCH"}:
         binding_valid = False
@@ -484,7 +873,7 @@ def evaluate_validation_preview(
     if operation == "PATCH" and (
             not isinstance(touched_attributes, list)
             or not touched_attributes
-            or not all(is_provided(item) for item in touched_attributes)
+            or not all(isinstance(item, str) and bool(item.strip()) for item in touched_attributes)
     ):
         binding_valid = False
         rows.append(finding(
@@ -493,20 +882,26 @@ def evaluate_validation_preview(
             "A PATCH candidate must list the attributes it touches.",
             "VALIDATION_PREVIEW",
         ))
-    elif touched_attributes is not None and not isinstance(touched_attributes, list):
+    elif touched_attributes is not None and (
+            not isinstance(touched_attributes, list)
+            or not all(isinstance(item, str) and bool(item.strip()) for item in touched_attributes)
+    ):
         binding_valid = False
         rows.append(finding(
             SYSTEM_ERROR,
             "TOUCHED_ATTRIBUTES_INVALID",
-            "touched_attributes must be an array when provided.",
+            "touched_attributes must contain only non-empty strings.",
             "VALIDATION_PREVIEW",
         ))
 
     required_preview = (
         "mode", "operation", "payload_sha256", "seller_id", "marketplace_id",
         "sku", "product_type", "request_id", "submission_id", "requested_at",
-        "responded_at", "http_status", "status", "issues",
+        "responded_at", "expires_at", "request_fingerprint_sha256", "http_status",
+        "status", "issues",
     )
+    if operation == "PUT":
+        required_preview += ("requirements",)
     missing_preview = [name for name in required_preview if name not in preview or not is_provided(preview.get(name))]
     # An empty issue array is valid evidence, unlike empty strings and nulls.
     if "issues" in preview and isinstance(preview.get("issues"), list):
@@ -567,6 +962,37 @@ def evaluate_validation_preview(
             evidence={"candidate": payload_sha256, "preview": preview_hash},
         ))
 
+    if operation == "PUT" and is_provided(preview.get("requirements")):
+        if str(preview.get("requirements")) != str(candidate.get("requirements")) \
+                or str(preview.get("requirements")) != str(scope.get("requirements")):
+            binding_valid = False
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "PREVIEW_REQUIREMENTS_MISMATCH",
+                "PUT preview requirements do not match the candidate and diagnostic scope.",
+                "VALIDATION_PREVIEW",
+                evidence={
+                    "scope": scope.get("requirements"),
+                    "candidate": candidate.get("requirements"),
+                    "preview": preview.get("requirements"),
+                },
+            ))
+
+    expected_fingerprint = request_fingerprint(scope, candidate)
+    preview_fingerprint = preview.get("request_fingerprint_sha256")
+    if is_provided(preview_fingerprint) and (
+            not SHA256_PATTERN.fullmatch(str(preview_fingerprint))
+            or str(preview_fingerprint).lower() != expected_fingerprint
+    ):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PREVIEW_REQUEST_FINGERPRINT_MISMATCH",
+            "Preview request fingerprint does not match the bound candidate request.",
+            "VALIDATION_PREVIEW",
+            evidence={"expected": expected_fingerprint, "actual": preview_fingerprint},
+        ))
+
     for field in ("seller_id", "marketplace_id", "sku", "product_type"):
         if is_provided(preview.get(field)) and is_provided(scope.get(field)) \
                 and str(preview.get(field)) != str(scope.get(field)):
@@ -588,6 +1014,53 @@ def evaluate_validation_preview(
             "Preview HTTP status is not a successful 2xx response.",
             "VALIDATION_PREVIEW",
             evidence=http_status,
+        ))
+
+    candidate_created_at = parse_timestamp(candidate.get("created_at"))
+    requested_at = parse_timestamp(preview.get("requested_at"))
+    responded_at = parse_timestamp(preview.get("responded_at"))
+    expires_at = parse_timestamp(preview.get("expires_at"))
+    if None in {candidate_created_at, requested_at, responded_at, expires_at}:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PREVIEW_TIMESTAMP_INVALID",
+            "Candidate and preview timestamps must be timezone-aware ISO-8601 values.",
+            "VALIDATION_PREVIEW",
+        ))
+    elif not (candidate_created_at <= requested_at <= responded_at <= expires_at):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "PREVIEW_TIME_ORDER_INVALID",
+            "Expected candidate.created_at <= requested_at <= responded_at <= expires_at.",
+            "VALIDATION_PREVIEW",
+        ))
+    elif evaluation_time is None:
+        binding_valid = False
+        rows.append(finding(
+            NOT_EVALUATED,
+            "PREVIEW_FRESHNESS_NOT_EVALUATED",
+            "data_as_of is required to determine whether the Preview is still current.",
+            "VALIDATION_PREVIEW",
+        ))
+    elif evaluation_time > expires_at:
+        binding_valid = False
+        rows.append(finding(
+            NOT_EVALUATED,
+            "PREVIEW_STALE",
+            "The bound preview expired before this diagnostic run.",
+            "VALIDATION_PREVIEW",
+            evidence={"expires_at": preview.get("expires_at")},
+        ))
+    if requested_at is not None and ptd_fetched_at is not None and requested_at < ptd_fetched_at:
+        binding_valid = False
+        rows.append(finding(
+            NOT_EVALUATED,
+            "PREVIEW_PREDATES_PTD",
+            "The preview predates the PTD evidence used in this report and must be rerun.",
+            "VALIDATION_PREVIEW",
+            evidence={"preview_requested_at": preview.get("requested_at")},
         ))
 
     preview_status = str(preview.get("status") or "").upper()
@@ -620,26 +1093,50 @@ def evaluate_validation_preview(
             evidence=preview_status,
         ))
 
+    if not binding_valid:
+        for row in rows:
+            if row["source"] == "VALIDATION_PREVIEW" and row["status"] in {
+                OFFICIAL_ERROR, OFFICIAL_WARNING
+            }:
+                row["applies_to_candidate"] = False
+
     preview_passed = preview_status == "VALID" and binding_valid and not any(
-        row["status"] in {OFFICIAL_ERROR, SYSTEM_ERROR} for row in rows
+        row["status"] in {OFFICIAL_ERROR, SYSTEM_ERROR}
+        and row.get("applies_to_candidate", True)
+        for row in rows
     )
     return rows, preview_passed, normalized_candidate
 
 
 def calculate_gate(rows: list[dict[str, Any]], sources: set[str], evaluated: bool,
                    pass_value: str = "PASS") -> str:
-    relevant = [row for row in rows if row["source"] in sources]
+    relevant = [
+        row for row in rows
+        if row["source"] in sources
+        and not (
+            row["status"] in {OFFICIAL_ERROR, OFFICIAL_WARNING}
+            and row.get("applies_to_candidate") is False
+        )
+        and not (
+            row["status"] in {OFFICIAL_ERROR, OFFICIAL_WARNING}
+            and row.get("applies_to_current") is False
+        )
+    ]
     if any(row["status"] == OFFICIAL_ERROR for row in relevant):
         return "BLOCK"
     if any(row["status"] == SYSTEM_ERROR for row in relevant):
         return "UNKNOWN"
     if any(row["status"] == OFFICIAL_WARNING for row in relevant):
         return "REVIEW"
+    if any(row["status"] == NOT_EVALUATED for row in relevant):
+        return "NOT_EVALUATED"
     return pass_value if evaluated else "NOT_EVALUATED"
 
 
 def decide_release(current_gate: str, candidate_gate: str, candidate: dict[str, Any],
-                   rows: list[dict[str, Any]]) -> tuple[str, list[str]]:
+                   rows: list[dict[str, Any]],
+                   listing_snapshot_evaluated: bool,
+                   full_schema_validated: bool) -> tuple[str, list[str]]:
     if candidate_gate == "BLOCK":
         return "BLOCK", ["CANDIDATE_PREVIEW_BLOCKED"]
     if candidate_gate == "UNKNOWN":
@@ -656,6 +1153,8 @@ def decide_release(current_gate: str, candidate_gate: str, candidate: dict[str, 
         return "REVIEW", ["CANDIDATE_PREVIEW_REQUIRES_REVIEW"]
 
     operation = str(candidate.get("operation") or "").upper()
+    if operation == "PATCH" and not listing_snapshot_evaluated:
+        return "REVIEW", ["PATCH_REQUIRES_TRACEABLE_CURRENT_LISTING_SNAPSHOT"]
     if current_gate == "UNKNOWN":
         return "UNKNOWN", ["CURRENT_LISTING_EVIDENCE_UNKNOWN"]
     if current_gate == "BLOCK":
@@ -677,6 +1176,8 @@ def decide_release(current_gate: str, candidate_gate: str, candidate: dict[str, 
         return "REVIEW", ["CURRENT_LISTING_REQUIRES_REVIEW"]
     if operation == "PATCH" and current_gate == "NOT_EVALUATED":
         return "REVIEW", ["PATCH_DOES_NOT_ESTABLISH_FULL_LISTING_STATE"]
+    if not full_schema_validated:
+        return "REVIEW", ["FULL_PTD_SCHEMA_VALIDATION_REQUIRED"]
 
     return "PASS", ["BOUND_CANDIDATE_PREVIEW_VALID"]
 
@@ -703,6 +1204,23 @@ def diagnose(data: Any) -> dict[str, Any]:
         )], False, False)
 
     rows: list[dict[str, Any]] = []
+    data_as_of = data.get("data_as_of")
+    evaluation_time = parse_timestamp(data_as_of)
+    if data_as_of is None:
+        rows.append(finding(
+            NOT_EVALUATED,
+            "EVALUATION_TIME_MISSING",
+            "data_as_of is required to evaluate evidence freshness.",
+            "INPUT",
+        ))
+    elif evaluation_time is None:
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "EVALUATION_TIME_INVALID",
+            "data_as_of must be a timezone-aware ISO-8601 timestamp.",
+            "INPUT",
+            evidence=data_as_of,
+        ))
     missing_identity = [name for name in ("seller_id", "marketplace_id", "sku")
                         if not is_provided(scope.get(name))]
     if missing_identity:
@@ -719,51 +1237,47 @@ def diagnose(data: Any) -> dict[str, Any]:
         for key in ("title", "item_highlight", "bullets", "description", "backend_search_terms", "images")
     }
 
-    listing_issues = official.get("listing_issues")
-    listing_issues_evaluated = False
-    if listing_issues is None:
-        rows.append(finding(
-            NOT_EVALUATED,
-            "LISTING_ISSUES_MISSING",
-            "Current Listings Items issues were not supplied.",
-            "LISTINGS_ITEMS",
-        ))
-    elif not isinstance(listing_issues, list):
-        rows.append(finding(
-            SYSTEM_ERROR,
-            "LISTING_ISSUES_INVALID",
-            "Listings Items issues are not an array.",
-            "LISTINGS_ITEMS",
-        ))
-    else:
-        listing_issues_evaluated = True
-        rows.extend(classify_official_issue(issue, "LISTINGS_ITEMS") for issue in listing_issues)
+    snapshot_rows, listing_snapshot_evaluated, listing_snapshot = evaluate_listing_snapshot(
+        scope, official, evaluation_time
+    )
+    rows.extend(snapshot_rows)
 
+    ptd_input = official.get("ptd")
+    ptd_rows, ptd_evaluated, ptd_validation_coverage = evaluate_ptd(
+        scope, content, ptd_input, evaluation_time
+    )
+    rows.extend(ptd_rows)
+
+    ptd_fetched_at = parse_timestamp(ptd_input.get("fetched_at")) if isinstance(ptd_input, dict) else None
     preview_rows, preview_passed, candidate = evaluate_validation_preview(
-        scope, data.get("candidate"), official.get("validation_preview")
+        scope, data.get("candidate"), official.get("validation_preview"),
+        evaluation_time, ptd_fetched_at,
     )
     rows.extend(preview_rows)
 
-    ptd_rows, ptd_evaluated, ptd_validation_coverage = evaluate_ptd(content, official.get("ptd"))
-    rows.extend(ptd_rows)
     rows.extend(evaluate_images(content))
     report = finalize(
         scope,
         coverage,
         candidate,
         rows,
-        listing_issues_evaluated or ptd_evaluated,
+        listing_snapshot_evaluated or ptd_evaluated,
         preview_passed,
+        listing_snapshot_evaluated,
+        ptd_evaluated,
+        bool(ptd_validation_coverage.get("full_schema_validation")),
     )
-    report["data_as_of"] = data.get("data_as_of")
+    report["data_as_of"] = data_as_of
+    report["listing_snapshot"] = listing_snapshot
     report["ptd_validation_coverage"] = ptd_validation_coverage
     preview = official.get("validation_preview")
     report["validation_preview"] = {
         key: preview.get(key)
         for key in (
             "ran", "mode", "operation", "payload_sha256", "seller_id", "marketplace_id",
-            "sku", "product_type", "request_id", "submission_id", "requested_at",
-            "responded_at", "http_status", "status",
+            "sku", "product_type", "requirements", "request_fingerprint_sha256",
+            "request_id", "submission_id", "requested_at", "responded_at", "expires_at",
+            "http_status", "status",
         )
         if isinstance(preview, dict) and key in preview
     }
@@ -772,26 +1286,34 @@ def diagnose(data: Any) -> dict[str, Any]:
 
 def finalize(scope: dict[str, Any], coverage: dict[str, Any], candidate: dict[str, Any],
              rows: list[dict[str, Any]], current_evaluated: bool,
-             preview_passed: bool) -> dict[str, Any]:
+             preview_passed: bool, listing_snapshot_evaluated: bool = False,
+             ptd_evaluated: bool = False,
+             full_schema_validated: bool = False) -> dict[str, Any]:
     counts = Counter(row["status"] for row in rows)
     current_gate = calculate_gate(
         rows,
-        {"LISTINGS_ITEMS", "PTD"},
+        {"INPUT", "LISTINGS_ITEMS", "PTD"},
         current_evaluated,
         pass_value="NO_KNOWN_OFFICIAL_ISSUES",
     )
     candidate_gate = calculate_gate(
         rows,
-        {"VALIDATION_PREVIEW"},
+        {"INPUT", "VALIDATION_PREVIEW"},
         preview_passed,
         pass_value="PASS",
     )
-    release_decision, release_reasons = decide_release(current_gate, candidate_gate, candidate, rows)
+    release_decision, release_reasons = decide_release(
+        current_gate, candidate_gate, candidate, rows, listing_snapshot_evaluated,
+        full_schema_validated,
+    )
     official_incomplete = any(
         row["status"] in {NOT_EVALUATED, SYSTEM_ERROR} and row["source"] in OFFICIAL_SOURCES
         for row in rows
-    )
+    ) or not full_schema_validated
     operation = str(candidate.get("operation") or "").upper() or None
+    requirements = str(candidate.get("requirements") or "").upper() or None
+    official_coverage = "FULL" if operation == "PUT" and requirements == "LISTING" \
+        else "PARTIAL" if operation in {"PUT", "PATCH"} else "UNKNOWN"
     return {
         "scope": scope,
         "candidate": candidate,
@@ -803,10 +1325,17 @@ def finalize(scope: dict[str, Any], coverage: dict[str, Any], candidate: dict[st
         "gate": "PASS_OFFICIAL_CHECKS" if release_decision == "PASS" else release_decision,
         "official_scope": {
             "operation": operation,
-            "coverage": "FULL" if operation == "PUT" else "PARTIAL" if operation == "PATCH" else "UNKNOWN",
+            "requirements": requirements,
+            "coverage": official_coverage,
             "touched_attributes": candidate.get("touched_attributes") if operation == "PATCH" else None,
         },
         "official_validation_completeness": "INCOMPLETE" if official_incomplete else "COMPLETE",
+        "official_evidence_coverage": {
+            "current_listing_snapshot": "COMPLETE" if listing_snapshot_evaluated else "INCOMPLETE",
+            "candidate_preview": "COMPLETE" if preview_passed else "INCOMPLETE",
+            "ptd_local_validation": "FULL_JSON_SCHEMA" if full_schema_validated
+            else "EVALUATED_SUBSET" if ptd_evaluated else "INCOMPLETE",
+        },
         "coverage": coverage,
         "counts": {state: counts.get(state, 0) for state in ALL_STATES},
         "findings": rows,
@@ -819,6 +1348,18 @@ def parse_args() -> argparse.Namespace:
     group.add_argument("--file", type=Path, help="Input JSON file")
     group.add_argument("--data", help="Inline JSON")
     return parser.parse_args()
+
+
+def exit_code(report: dict[str, Any]) -> int:
+    has_official_error = bool(report["counts"][OFFICIAL_ERROR])
+    has_system_error = bool(report["counts"][SYSTEM_ERROR])
+    if has_official_error and has_system_error:
+        return 3
+    if has_official_error:
+        return 1
+    if has_system_error:
+        return 2
+    return 0
 
 
 def main() -> int:
@@ -834,11 +1375,7 @@ def main() -> int:
             "INPUT",
         )], False, False)
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    if report["counts"][SYSTEM_ERROR]:
-        return 2
-    if report["counts"][OFFICIAL_ERROR]:
-        return 1
-    return 0
+    return exit_code(report)
 
 
 if __name__ == "__main__":

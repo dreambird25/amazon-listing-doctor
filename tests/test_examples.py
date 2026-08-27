@@ -24,11 +24,14 @@ class ExampleFixtureTest(unittest.TestCase):
     def test_example_gates(self):
         expected = {
             "listing-valid.json": (
-                "NO_KNOWN_OFFICIAL_ISSUES", "PASS", "PASS"
+                "NO_KNOWN_OFFICIAL_ISSUES", "PASS", "REVIEW"
             ),
             "listing-blocked.json": ("BLOCK", "BLOCK", "BLOCK"),
             "listing-incomplete.json": (
                 "NOT_EVALUATED", "NOT_EVALUATED", "NOT_EVALUATED"
+            ),
+            "listing-practice-sanitized.json": (
+                "BLOCK", "NOT_EVALUATED", "BLOCK"
             ),
         }
         for filename, gates in expected.items():

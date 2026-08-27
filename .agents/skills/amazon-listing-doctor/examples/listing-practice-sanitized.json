@@ -1,0 +1,32 @@
+{
+  "scope": {
+    "seller_id": "SELLER_ID",
+    "marketplace_id": "MARKETPLACE_ID",
+    "sku": "SELLER_SKU",
+    "product_type": "PRODUCT_TYPE",
+    "requirements": "LISTING",
+    "parentage_level": "CHILD",
+    "locale": "en_US"
+  },
+  "content": {
+    "title": "Synthetic title used only to exercise the public diagnostic contract",
+    "item_highlight": "Synthetic highlight with no relationship to a real product",
+    "backend_search_terms": "synthetic placeholder keywords",
+    "images": [{
+      "is_main": true,
+      "width": null,
+      "height": null,
+      "white_background": null,
+      "watermark": null
+    }]
+  },
+  "official": {
+    "listing_issues": [{
+      "code": "SANITIZED_OFFICIAL_ERROR",
+      "message": "Synthetic official error retained to test conservative blocking.",
+      "severity": "ERROR",
+      "attributeNames": ["item_name"]
+    }]
+  },
+  "data_as_of": "2026-01-01T00:00:00Z"
+}

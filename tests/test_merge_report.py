@@ -25,6 +25,8 @@ class MergeReportTest(unittest.TestCase):
             "candidate_preview_gate": "PASS",
             "release_decision": "PASS",
             "official_validation_completeness": "COMPLETE",
+            "official_evidence_coverage": {},
+            "ptd_validation_coverage": {},
             "counts": {},
             "findings": [],
         }

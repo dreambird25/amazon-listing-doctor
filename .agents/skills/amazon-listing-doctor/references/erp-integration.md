@@ -5,9 +5,9 @@ Keep the public skill independent from private tables, endpoints, credentials, a
 ## Required adapter capabilities
 
 1. **Resolve identity**: seller, marketplace, Seller SKU, optional ASIN, product type, and locale.
-2. **Read seller Listing state**: current attributes, summaries, issues, status, source timestamp, and dataset completeness.
+2. **Read seller Listing state**: current attributes, summaries, issues, status, request ID, source timestamp, expiry, and exact included datasets.
 3. **Read PTD evidence**: schema status, checksum/version, effective scope, extracted constraints, expiry, and last refresh result.
-4. **Run candidate preview**: hash the exact canonical candidate payload, submit it with `mode=VALIDATION_PREVIEW`, and return the normalized request scope, response status, issues, request/submission identifiers, HTTP status, and request/response timestamps.
+4. **Run candidate preview**: hash the exact canonical candidate payload, compute the public request fingerprint, submit it with `mode=VALIDATION_PREVIEW`, and return the normalized request scope, response status, issues, request/submission identifiers, HTTP status, ordered timestamps, and expiry.
 5. **Read catalog context**: optional Catalog Items data clearly labeled as merged catalog context, never seller contribution.
 
 The adapter may use REST, files, a read-only database view, or an in-process service. The public report contract must not reveal internal URLs, table names, credentials, tenant identifiers, or production topology.
@@ -23,8 +23,10 @@ The adapter may use REST, files, a read-only database view, or an in-process ser
 
 - Calculate `payload_sha256` from one documented canonical JSON representation before the preview request; use the same digest on the candidate and preview evidence objects.
 - Record `PUT` or `PATCH`. A PATCH must list `touched_attributes`; never interpret a successful price-only PATCH preview as a full-Listing pass.
-- Attach seller, marketplace, Seller SKU, product type, request ID, submission ID, request/response timestamps, and HTTP status to the normalized preview evidence.
+- Attach seller, marketplace, Seller SKU, product type, request fingerprint, request ID, submission ID, request/response/expiry timestamps, and HTTP status to the normalized preview evidence.
 - Only Amazon status `VALID` belongs to a successful validation preview. Treat `ACCEPTED` as a real-submission response mismatch.
+- Record Amazon request `requirements` for PUT. PATCH requests do not contain this field; PATCH requirements remain local PTD validation context.
+- Rate-limit Preview independently and use it for selected release candidates, not uncontrolled bulk scans.
 
 ## PTD adapter output
 
@@ -34,7 +36,22 @@ Return only the public fields needed by the classifier:
 {
   "status": "FRESH",
   "schema_checksum": "SCHEMA_CHECKSUM",
+  "meta_schema_checksum": "META_SCHEMA_CHECKSUM",
   "resolved_version": "VERSION",
+  "latest": true,
+  "release_candidate": false,
+  "fetched_at": "2026-01-01T00:00:00Z",
+  "expires_at": "2026-01-01T00:10:00Z",
+  "scope": {
+    "seller_id": "SELLER_ID",
+    "marketplace_id": "MARKETPLACE_ID",
+    "product_type": "PRODUCT_TYPE",
+    "product_type_version": "VERSION",
+    "requirements": "LISTING",
+    "requirements_enforced": "ENFORCED",
+    "parentage_level": "CHILD",
+    "locale": "en_US"
+  },
   "constraints": {
     "item_name": [
       {"type": "MAX_LENGTH", "value": 125, "unit": "CODE_POINTS"}
@@ -43,7 +60,7 @@ Return only the public fields needed by the classifier:
 }
 ```
 
-Recommended statuses are `FRESH`, `STALE_WITHIN_GRACE`, and `UNAVAILABLE`. A refresh failure must not overwrite the last successful schema. Whether a stale schema is acceptable for a real submission remains the ERP's policy; this public checker reports it as a warning.
+Recommended statuses are `FRESH`, `STALE_WITHIN_GRACE`, and `UNAVAILABLE`. A refresh failure must not overwrite the last successful schema. Whether a stale schema is acceptable for a real submission remains the ERP's policy; this public checker reports it as a warning. Preserve Schema and Meta-Schema checksums plus the resolved version's `latest` and `release_candidate` flags. The adapter must not describe extracted length/item constraints as full JSON Schema validation.
 
 ## External action boundary
 

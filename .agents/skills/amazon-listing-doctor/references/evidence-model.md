@@ -2,7 +2,7 @@
 
 ## 证据优先级
 
-1. 当前 Seller SKU 的 Listings Items `issues` 与 `VALIDATION_PREVIEW`。
+1. 与身份、includedData 和时效绑定的当前 Seller SKU Listings Items 快照，以及与候选请求绑定的 `VALIDATION_PREVIEW`。
 2. 与 `sellerId + marketplaceId + productType + requirements + parentageLevel` 对应、checksum 可追溯且仍有效的 PTD Schema。
 3. 卖家 Listing 当前 `attributes`、`summaries` 和状态快照。
 4. Catalog Items 目录合并内容，仅作对照，不代表卖家贡献值。
@@ -44,13 +44,17 @@ API 超时/限流/授权失败、Schema 下载或 checksum 失败、JSON 解析�
 - `candidate_preview_gate`：仅评价与具体候选 Payload 绑定的 `VALIDATION_PREVIEW`。
 - `release_decision`：结合前两者以及 PUT/PATCH 范围给出的保守发布判断。
 
-每层均先判断已知 `OFFICIAL_ERROR`，再判断 `SYSTEM_ERROR`。因此“已知 ERROR + 另一证据源异常”必须保留 `BLOCK`，同时输出 `official_validation_completeness=INCOMPLETE`，不能用 `UNKNOWN` 隐藏已知 blocker。
+当前 Listing 层先保留已知 `OFFICIAL_ERROR`，再表达其他证据源异常。因此“已知当前 ERROR + 另一证据源异常”必须保留 `BLOCK + INCOMPLETE`，不能用 `UNKNOWN` 隐藏已知 blocker。
 
-只有 `mode=VALIDATION_PREVIEW`、操作与身份范围一致、候选和 Preview 的 `payload_sha256` 相同、追踪字段完整且状态为 `VALID` 时，`candidate_preview_gate` 才能为 `PASS`。`ACCEPTED` 属于真实提交响应，不得解释为预检通过。
+候选 Preview 层先验证响应是否属于当前候选。若身份、operation、Payload hash、请求指纹或时间不匹配，Preview 中的 ERROR/WARNING 必须标记 `applies_to_candidate=false`，候选结论为 `UNKNOWN`；旧 Payload 或其他 SKU 的 ERROR 不能阻断当前候选。
 
-PATCH 只覆盖 `touched_attributes`。即使候选预检为 `PASS`，未覆盖的当前问题仍不得被整体标记为通过。兼容字段 `gate` 在 `release_decision=PASS` 时返回旧值 `PASS_OFFICIAL_CHECKS`，其他值与 `release_decision` 相同。
+当前 Listing 快照或 PTD 的身份、范围或时效绑定失效时，其 ERROR/WARNING 同样保留在 findings，但标记 `applies_to_current=false`；其他 Marketplace、SKU 或过期 Schema 的错误不能阻断当前范围。
 
-`HEURISTIC_ADVICE` 不参与门禁。`PASS_OFFICIAL_CHECKS` 也不保证真实提交已生效。
+只有 `mode=VALIDATION_PREVIEW`、操作与身份范围一致、候选和 Preview 的 `payload_sha256`/请求指纹相同、时间有效、追踪字段完整且状态为 `VALID` 时，`candidate_preview_gate` 才能为 `PASS`。`ACCEPTED` 属于真实提交响应，不得解释为预检通过。
+
+PATCH 只覆盖 `touched_attributes`。即使候选预检为 `PASS`，缺少可追溯当前快照或存在未覆盖当前问题时，发布结论仍不得为 `PASS`。兼容字段 `gate` 在 `release_decision=PASS` 时返回旧值 `PASS_OFFICIAL_CHECKS`，其他值与 `release_decision` 相同。
+
+`HEURISTIC_ADVICE` 不参与门禁。内置 PTD 校验仅为 `LIGHTWEIGHT_SUBSET`，因此绑定 Preview 通过时 `candidate_preview_gate` 可为 `PASS`，但 `release_decision` 仍为 `REVIEW`。`PASS_OFFICIAL_CHECKS` 也不保证真实提交已生效。
 
 ## 语义建议
 

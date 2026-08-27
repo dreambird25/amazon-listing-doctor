@@ -2,6 +2,30 @@
 
 本项目采用语义化版本。版本记录描述公共契约和行为变化，不登记任何接入方私有实现或数据。
 
+## [1.2.0] - 2026-08-27
+
+### 生产门禁
+
+- 未绑定当前候选的 Preview ERROR/WARNING 保留为证据，但标记 `applies_to_candidate=false`，不再用旧 Payload、其他 SKU 或错误 operation 阻断当前候选。
+- PATCH 即使 Preview 为 `VALID`，缺少可追溯当前 Listings Items 快照时也只能 `REVIEW`，不得自动放行。
+- 新增 `listing_snapshot` 契约，绑定 seller、marketplace、SKU、request ID、`included_data`、issues 和获取/过期时间；旧 `listing_issues` 安全降级为不完整证据。
+- 快照或 PTD 错绑/过期时，其官方 findings 保留但标记 `applies_to_current=false`，不再误拦当前 Listing scope。
+- PTD 强制绑定 seller、marketplace、Product Type/version、requirements、requirements enforcement、parentage、locale、Schema/Meta-Schema checksum、版本标志和时间。
+- 内置 PTD 子集检查不再允许 `release_decision=PASS`；绑定 Preview 可通过候选门禁，但发布仍要求外部完整 PTD JSON Schema 校验。
+- Preview 增加请求指纹、有效期和时间顺序校验；PUT 要求回显 request requirements，PATCH 按 Amazon 官方模型不伪造该请求字段。
+- 严格校验图片布尔元数据、主图唯一性和 PATCH `touched_attributes` 字符串类型。
+- CLI 增加退出码 `3` 表示“已知官方 ERROR + 系统异常”，避免只看退出码的集成隐藏 blocker。
+
+### 实践与研究
+
+- 使用真实只读 Listing 接口完成端到端回放，验证已知官方 ERROR 与不完整结构化视图并存时必须输出 `BLOCK + INCOMPLETE`。
+- 新增不可逆脱敏的 `listing-practice-sanitized.json`；未提交测试 ASIN、真实文案、店铺、SKU、Issue code、图片或接口响应。
+- 新增 Amazon 官方文档/OpenAPI/JSON Schema 一手资料研究和生产接入指南，明确 Preview 低吞吐、完整 PTD 校验和提交后对账边界。
+
+### 验证
+
+- 行为测试增加到 48 个，并将 GitHub Actions 扩展为 Python 3.10、3.11、3.12、3.13 矩阵。
+
 ## [1.1.0] - 2026-08-27
 
 ### 新增

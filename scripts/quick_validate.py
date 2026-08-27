@@ -15,6 +15,7 @@ REQUIRED = (
     "README.md",
     "README_EN.md",
     "CHANGELOG.md",
+    "docs/production-readiness-research.md",
     "LICENSE",
     "scripts/diagnose_listing.py",
     "scripts/compliance_report.py",
@@ -24,12 +25,14 @@ REQUIRED = (
     ".agents/skills/amazon-listing-doctor/references/evidence-model.md",
     ".agents/skills/amazon-listing-doctor/references/erp-integration.md",
     ".agents/skills/amazon-listing-doctor/references/quality-assessment.md",
+    ".agents/skills/amazon-listing-doctor/references/production-readiness.md",
     ".agents/skills/amazon-listing-doctor/references/report-contract.md",
     ".agents/skills/amazon-listing-doctor/scripts/diagnose_listing.py",
     ".agents/skills/amazon-listing-doctor/scripts/merge_report.py",
     ".agents/skills/amazon-listing-doctor/examples/listing-valid.json",
     ".agents/skills/amazon-listing-doctor/examples/listing-blocked.json",
     ".agents/skills/amazon-listing-doctor/examples/listing-incomplete.json",
+    ".agents/skills/amazon-listing-doctor/examples/listing-practice-sanitized.json",
     ".agents/skills/amazon-listing-doctor/examples/semantic-assessment.json",
 )
 
@@ -53,8 +56,8 @@ def validate_skill() -> None:
         fail("SKILL.md name is invalid")
     if not re.search(r"(?m)^description:\s+.+$", frontmatter):
         fail("SKILL.md description is missing")
-    if not re.search(r"(?m)^\s+version:\s+1\.1\.0\s*$", frontmatter):
-        fail("SKILL.md version is not 1.1.0")
+    if not re.search(r"(?m)^\s+version:\s+1\.2\.0\s*$", frontmatter):
+        fail("SKILL.md version is not 1.2.0")
     if (ROOT / "SKILL.md").exists():
         fail("Root SKILL.md would duplicate the repo-scoped skill")
 

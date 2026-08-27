@@ -4,7 +4,7 @@ A repo-discoverable Codex Skill for evidence-first Amazon Listing diagnostics. I
 
 This public fork of [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) contains no company-specific code, endpoints, schemas, account identifiers, SKUs, ASINs, credentials, or runtime configuration.
 
-Current version: **v1.1.0**. See [`CHANGELOG.md`](CHANGELOG.md).
+Current version: **v1.2.0**. This release adds production evidence binding and a sanitized real-world replay. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Three independent conclusions
 
@@ -53,6 +53,14 @@ See the [official OpenAI Build skills documentation](https://developers.openai.c
 
 The public version does not authenticate to Seller Central or call SP-API. A user, ERP, or converter supplies normalized evidence from files, Listings Items, Product Type Definitions, `VALIDATION_PREVIEW`, or another read-only source. See the [example fixtures](.agents/skills/amazon-listing-doctor/examples/README.md).
 
+## Production status
+
+v1.2.0 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass.
+
+Unattended automatic release still requires a full Draft 2019-09 validator with Amazon vocabulary support, independent Preview rate limiting, an authorized submission workflow, and post-submission issue/status reconciliation in the integrating system. See the [official-source production research](docs/production-readiness-research.md) and [production integration guide](.agents/skills/amazon-listing-doctor/references/production-readiness.md).
+
+A real read-only Listing exercise exposed a known Amazon ERROR while another structured view had not caught up. The public regression fixture preserves only the required behavior—`BLOCK + INCOMPLETE`. [`listing-practice-sanitized.json`](.agents/skills/amazon-listing-doctor/examples/listing-practice-sanitized.json) replaces every identity, content value, issue code, timestamp, and dimension and contains no source product data.
+
 ## Developer CLI
 
 ```bash
@@ -61,14 +69,14 @@ python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/e
 
 The root command is a compatibility wrapper around the canonical Skill script. Both deterministic scripts use only the Python standard library, make no network calls, and perform no writes.
 
-The local PTD engine executes only its supported length/item constraints and reports `ptd_validation_coverage=LIGHTWEIGHT_SUBSET`; it does not claim complete PTD Schema validation. Candidate acceptance still depends on `VALIDATION_PREVIEW` evidence bound to the same payload.
+The local PTD engine executes only its supported length/item constraints and reports `ptd_validation_coverage=LIGHTWEIGHT_SUBSET`; it does not claim complete PTD Schema validation. Even with a bound, valid `VALIDATION_PREVIEW`, the bundled engine therefore keeps `release_decision=REVIEW`. Preview proves only that the candidate preview is valid, not that it was published or is ready for unattended release.
 
 The quality branch follows [`quality-assessment.md`](.agents/skills/amazon-listing-doctor/references/quality-assessment.md) and is validated and merged by `scripts/merge_report.py` inside the Skill. Official input/output is defined in [`report-contract.md`](.agents/skills/amazon-listing-doctor/references/report-contract.md).
 
 ## Safety boundaries
 
 - No real PATCH, feed submission, production write, or automatic publication.
-- A preview passes only when mode, operation, Listing scope, and candidate payload hash match.
+- A preview passes only when mode, operation, Listing scope, candidate payload hash, request fingerprint, and evidence time match.
 - `ACCEPTED` is a real-submission response, not a preview pass.
 - Content-quality advice never changes the official gate.
 

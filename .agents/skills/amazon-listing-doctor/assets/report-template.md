@@ -6,6 +6,7 @@
 - 候选预检：`BLOCK / REVIEW / PASS / NOT_EVALUATED / UNKNOWN`
 - 发布决策：`BLOCK / REVIEW / PASS / NOT_EVALUATED / UNKNOWN`
 - 官方验证完整度：`COMPLETE / INCOMPLETE`
+- 当前快照 / 候选 Preview / 本地 PTD 覆盖：分别列出 `official_evidence_coverage`
 - 内容质量：`STRONG / ADEQUATE / NEEDS_IMPROVEMENT / PARTIALLY_EVALUATED / NOT_EVALUATED`
 - 内容证据完整度：`COMPLETE / PARTIAL / NONE`
 - 业务表现：`NOT_EVALUATED`
@@ -16,8 +17,10 @@
 
 - 店铺 / Marketplace / Seller SKU：
 - ASIN / Product Type / Requirements / Parentage / Locale：
-- Candidate operation / Payload SHA-256 / Touched attributes：
+- Candidate operation / Payload SHA-256 / Request fingerprint / Touched attributes：
 - Preview request ID / submission ID / 请求与响应时间：
+- Listing snapshot request ID / includedData / 获取与过期时间：
+- PTD scope / version flags / Schema + Meta-Schema checksum / 获取与过期时间：
 - 数据截止时间：
 - 数据来源：
 
