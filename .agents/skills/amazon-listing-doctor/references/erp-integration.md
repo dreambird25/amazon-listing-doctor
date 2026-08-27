@@ -16,6 +16,8 @@ The adapter may use REST, files, a read-only database view, or an in-process ser
 
 - Use `seller + marketplace + Seller SKU` as the seller Listing identity. ASIN alone is insufficient.
 - Include product type, parentage level when known, locale, data source, fetched-at time, and dataset completeness.
+- Keep the observed Listing in `current_content` and the exact proposed projection in `candidate.content`; never reuse one object implicitly in a new integration.
+- Preserve complete Amazon attribute arrays with `language_tag` and `marketplace_id`. Declare source-to-PTD names in `attribute_aliases`; do not hide alias rules inside adapter code.
 - Do not combine attributes from different marketplaces or sellers into one diagnostic object.
 - Mark delayed, partial, or stale snapshots explicitly. Do not silently promote cached data to current evidence.
 
@@ -68,3 +70,4 @@ Recommended statuses are `FRESH`, `STALE_WITHIN_GRACE`, and `UNAVAILABLE`. A ref
 - The diagnostic workflow never calls the real update adapter.
 - A production integration should add authorization, preview, idempotency, audit history, rate limiting, and post-submission verification outside this repository.
 - Store secrets in the integrating system, never in this public repository or diagnostic JSON fixtures.
+- Keep private Golden Dataset records outside the checkout. `scripts/evaluate_batch.py` emits aggregate, identifier-safe regression results.

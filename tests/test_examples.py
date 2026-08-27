@@ -26,6 +26,9 @@ class ExampleFixtureTest(unittest.TestCase):
             "listing-valid.json": (
                 "NO_KNOWN_OFFICIAL_ISSUES", "PASS", "REVIEW"
             ),
+            "listing-full-schema-valid.json": (
+                "NO_KNOWN_OFFICIAL_ISSUES", "PASS", "PASS"
+            ),
             "listing-blocked.json": ("BLOCK", "BLOCK", "BLOCK"),
             "listing-incomplete.json": (
                 "NOT_EVALUATED", "NOT_EVALUATED", "NOT_EVALUATED"
@@ -41,10 +44,14 @@ class ExampleFixtureTest(unittest.TestCase):
                 self.assertEqual(gates[0], report["current_listing_gate"])
                 self.assertEqual(gates[1], report["candidate_preview_gate"])
                 self.assertEqual(gates[2], report["release_decision"])
+                expected_full = filename == "listing-full-schema-valid.json"
                 self.assertEqual(
-                    "LIGHTWEIGHT_SUBSET", report["ptd_validation_coverage"]["mode"]
+                    "FULL_JSON_SCHEMA" if expected_full else "LIGHTWEIGHT_SUBSET",
+                    report["ptd_validation_coverage"]["mode"],
                 )
-                self.assertFalse(report["ptd_validation_coverage"]["full_schema_validation"])
+                self.assertEqual(
+                    expected_full, report["ptd_validation_coverage"]["full_schema_validation"]
+                )
 
     def test_semantic_example_merges_with_valid_report(self):
         listing = json.loads((SKILL / "examples" / "listing-valid.json").read_text(encoding="utf-8"))

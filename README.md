@@ -4,7 +4,7 @@
 
 这是 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的公共 Fork，不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
-当前版本：**v1.2.0**。本版完成生产证据绑定与真实只读场景回放，详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前版本：**v1.3.0**。本版补齐真实 Amazon 属性数组适配、中英文报告、当前/候选内容隔离、完整 PTD 校验证据入口和私有 Golden Dataset 回归工具，详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 它回答三个不同问题
 
@@ -59,11 +59,11 @@ https://github.com/dreambird25/amazon-listing-doctor/tree/main/.agents/skills/am
 
 ## 生产使用结论
 
-v1.2.0 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。
+v1.3.0 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。
 
 无人值守自动放行仍需由接入系统补齐：完整 Draft 2019-09 + Amazon vocabulary PTD 校验、Preview 独立限流、授权提交和提交后 issues/status 对账。Amazon 明确说明 Preview 适合少量 Listing，不是高吞吐生产主链路。官方依据见 [`生产就绪研究`](docs/production-readiness-research.md)，接入门禁见 [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)。
 
-本版使用真实只读 Listing 接口完成过端到端实践。实践发现“已知 Amazon ERROR 与另一结构化视图暂时不同步”的情况，因此公开回归样本要求保留 `BLOCK + INCOMPLETE`。仓库只保存 [`listing-practice-sanitized.json`](.agents/skills/amazon-listing-doctor/examples/listing-practice-sanitized.json)：所有身份、文案、Issue code、时间和尺寸均已替换，不含原始产品信息。
+本版使用固定随机种子对 30 条私有 Listing 做了只读实践，覆盖多个北美/欧洲站点和 Product Type。30 条重复运行的门禁均一致且没有引擎系统异常；实践同时确认 legacy issues 与另一问题视图可能不同步，且没有可追溯快照、PTD 和候选 Preview 时必须安全降级为不完整证据。公开仓库不保存这 30 条记录、标识或原始响应，只保留合成示例和不可逆脱敏回归样本。
 
 示例输入位于 [`examples`](.agents/skills/amazon-listing-doctor/examples/README.md)。
 
@@ -77,7 +77,20 @@ python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/e
 
 核心脚本位于 Skill 内部，根 CLI 只是兼容入口。脚本只使用 Python 标准库，不联网、不写数据。
 
-本地 PTD 引擎只执行当前支持的长度/数量约束，并通过 `ptd_validation_coverage` 明示 `LIGHTWEIGHT_SUBSET`；它不冒充完整 PTD Schema 校验。因此即使绑定同一 Payload 的 `VALIDATION_PREVIEW` 通过，内置引擎的 `release_decision` 仍为 `REVIEW`；Preview 只证明候选预检有效，不证明已发布或无人值守放行条件已满足。
+运行确定性 CLI 不需要 OpenAI API Key。通过 Codex 使用七维语义质量评估时，使用用户当前 Agent 环境；公共仓库不保存模型密钥。若其他系统自行调用模型，凭据和模型网关属于接入方私有配置。
+
+本地 PTD 引擎只执行当前支持的长度/数量约束，并通过 `ptd_validation_coverage` 明示 `LIGHTWEIGHT_SUBSET`；它不冒充完整 PTD Schema 校验。接入方可提供与 Schema checksum、Meta-Schema checksum、候选 Payload hash、校验器版本和时间绑定的外部完整校验证据，使模式升级为 `FULL_JSON_SCHEMA`。裸 `true` 不会被信任。
+
+无人值守证据还要求 PTD 使用 `requirementsEnforced=ENFORCED`；`NOT_ENFORCED` 即使外部 Schema 校验为 valid，也只能进入人工复核。
+
+中文报告与私有批量回归：
+
+```bash
+python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown
+python scripts/evaluate_batch.py --file private-golden-dataset.jsonl
+```
+
+`scope.locale` 决定 Listing 校验语言；`report_locale`/`--lang` 只决定展示语言。候选 Preview 的 `PASS` 展示为“候选预检通过”，绝不写成“发布成功”。批量回归只输出聚合门禁和哈希化样本引用，不回显原始 Listing 内容。
 
 内容质量由 Agent 按固定七维契约生成，再由确定性脚本验证和合并：
 
@@ -90,10 +103,12 @@ python .agents/skills/amazon-listing-doctor/scripts/merge_report.py \
 相关契约：
 
 - [`report-contract.md`](.agents/skills/amazon-listing-doctor/references/report-contract.md)：官方诊断输入输出。
-- [`evidence-model.md`](.agents/skills/amazon-listing-doctor/references/evidence-model.md)：五态证据和三层门禁。
+- [`evidence-model.md`](.agents/skills/amazon-listing-doctor/references/evidence-model.md)：五态证据和四层门禁。
 - [`quality-assessment.md`](.agents/skills/amazon-listing-doctor/references/quality-assessment.md)：七维内容质量 Schema 和 verdict 派生。
 - [`erp-integration.md`](.agents/skills/amazon-listing-doctor/references/erp-integration.md)：公共适配器边界。
 - [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)：生产证据、限流、自动化和发布闭环边界。
+- [`private-golden-dataset.md`](.agents/skills/amazon-listing-doctor/references/private-golden-dataset.md)：私有样本实践、脱敏和回归方法。
+- [`localization-calibration.md`](.agents/skills/amazon-listing-doctor/references/localization-calibration.md)：多语言内容质量校准边界。
 
 ## 安全边界
 

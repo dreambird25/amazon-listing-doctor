@@ -6,6 +6,10 @@ Fields may be absent, but missing official scope or preview traceability prevent
 
 ```json
 {
+  "report_locale": "zh-CN",
+  "attribute_aliases": {
+    "item_highlight": "title_differentiation"
+  },
   "scope": {
     "seller_id": "SELLER_ID",
     "marketplace_id": "MARKETPLACE_ID",
@@ -22,9 +26,18 @@ Fields may be absent, but missing official scope or preview traceability prevent
     "parentage_level": "CHILD",
     "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "touched_attributes": null,
-    "created_at": "2026-01-01T00:00:00Z"
+    "created_at": "2026-01-01T00:00:00Z",
+    "content": {
+      "attributes": {
+        "item_name": [{
+          "value": "Candidate title",
+          "language_tag": "en_US",
+          "marketplace_id": "MARKETPLACE_ID"
+        }]
+      }
+    }
   },
-  "content": {
+  "current_content": {
     "title": "...",
     "item_highlight": "...",
     "bullets": ["..."],
@@ -71,6 +84,7 @@ Fields may be absent, but missing official scope or preview traceability prevent
       "issues": []
     },
     "ptd": {
+      "validation_target": "CANDIDATE",
       "status": "FRESH",
       "schema_checksum": "SCHEMA_CHECKSUM",
       "meta_schema_checksum": "META_SCHEMA_CHECKSUM",
@@ -91,12 +105,29 @@ Fields may be absent, but missing official scope or preview traceability prevent
       },
       "constraints": {
         "item_name": [{"type": "MAX_LENGTH", "value": 125, "unit": "CODE_POINTS"}]
+      },
+      "full_schema_validation": {
+        "complete": true,
+        "valid": true,
+        "validator": "VALIDATOR_NAME",
+        "validator_version": "VALIDATOR_VERSION",
+        "schema_draft": "2019-09",
+        "amazon_vocabulary": true,
+        "schema_checksum": "SCHEMA_CHECKSUM",
+        "meta_schema_checksum": "META_SCHEMA_CHECKSUM",
+        "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "validated_at": "2026-01-01T00:00:02.500Z",
+        "errors": []
       }
     }
   },
   "data_as_of": "2026-01-01T00:00:03Z"
 }
 ```
+
+`current_content` is the observed Listing. `candidate.content` is the exact candidate being assessed. The legacy top-level `content` remains readable as shared content for v1.2 compatibility, but its report is marked `content_contract.mode=LEGACY_SHARED_CONTENT`; new production integrations must use the explicit fields.
+
+Amazon attribute values should be preserved under `attributes` as complete arrays. Do not select only the first value. Each element may carry `language_tag` and `marketplace_id`; the lightweight validator evaluates every element matching `scope.locale` and `scope.marketplace_id`. `attribute_aliases` maps a source field name to the current PTD attribute name and is also used when comparing PATCH `touched_attributes` with current issue attributes.
 
 ## Preview evidence rules
 
@@ -123,28 +154,32 @@ Fields may be absent, but missing official scope or preview traceability prevent
 
 - PTD scope must include seller, marketplace, requested product type, actual product type version, requirements, requirements enforcement, parentage level, and locale.
 - Schema and Meta-Schema checksums, resolved version, boolean `latest` / `release_candidate` flags, fetched time, and expiry are required. `requirements_enforced` must be `ENFORCED` or `NOT_ENFORCED`. Stale-within-grace evidence also requires a valid grace deadline.
-- Constraint findings from an invalid PTD binding remain visible with `applies_to_current=false`; a foreign or expired Schema cannot block the current scope.
-- The lightweight engine supports only the constraints below. It never sets `full_schema_validation=true`.
+- Candidate evidence retrieved with `requirements_enforced=NOT_ENFORCED` produces `OFFICIAL_WARNING` and can never produce unattended release `PASS`.
+- `validation_target=CURRENT|CANDIDATE` declares which content object the PTD evidence evaluates. Candidate findings cannot change `current_listing_gate`.
+- Constraint findings from an invalid PTD binding remain visible with the corresponding applicability flag set to `false`; a foreign or expired Schema cannot block another scope.
+- The lightweight engine supports only the constraints below. An external adapter may set `full_schema_validation=true` only through the complete evidence object shown above. The evidence must bind Draft 2019-09 plus Amazon vocabulary capability, validator/version, both Schema checksums, candidate Payload hash, ordered timestamp, and errors. A boolean assertion is `SYSTEM_ERROR`.
 
 Supported lightweight PTD constraints are `MAX_LENGTH`, `MIN_LENGTH`, `MAX_ITEMS`, and `MIN_ITEMS`; supported units are `CODE_POINTS`, `UTF8_BYTES`, and `ITEMS`. Unknown constraints become `NOT_EVALUATED`. This lightweight subset is not a complete PTD JSON Schema validator.
 
-Default mapping: `title → item_name`, `item_highlight → item_highlight`, `backend_search_terms → generic_keyword`, and `bullets → bullet_point`. If the current PTD uses other attribute names, use those names in the normalized object.
+Legacy convenience mapping is `title → item_name`, `item_highlight → item_highlight`, `backend_search_terms → generic_keyword`, and `bullets → bullet_point`. For real Amazon names such as `title_differentiation`, declare `attribute_aliases`; never change a canonical name silently inside the engine.
 
 ## Output
 
 - `current_listing_gate`: current Listings Items/PTD result — `BLOCK`, `REVIEW`, `NO_KNOWN_OFFICIAL_ISSUES`, `NOT_EVALUATED`, or `UNKNOWN`.
 - `candidate_preview_gate`: exact candidate preview result — `BLOCK`, `REVIEW`, `PASS`, `NOT_EVALUATED`, or `UNKNOWN`.
+- `candidate_local_validation_gate`: PTD result for explicit `candidate.content` — `BLOCK`, `REVIEW`, `PASS`, `NOT_EVALUATED`, or `UNKNOWN`.
 - `release_decision`: conservative combined result — `BLOCK`, `REVIEW`, `PASS`, `NOT_EVALUATED`, or `UNKNOWN`.
 - `release_reasons`: stable reason codes explaining the combined decision.
 - `official_scope`: candidate operation, `FULL/PARTIAL/UNKNOWN` coverage, and PATCH touched attributes.
 - `official_validation_completeness`: `COMPLETE` or `INCOMPLETE`. It is independent from blockers, so known ERROR plus another evidence failure remains `BLOCK + INCOMPLETE`. The bundled `LIGHTWEIGHT_SUBSET` PTD checker always keeps this field `INCOMPLETE` and keeps `release_decision=REVIEW`, even when the bound Preview passes.
 - `official_evidence_coverage`: separate completeness for current snapshot, candidate Preview, and local PTD subset.
-- `ptd_validation_coverage`: describes only the deterministic local PTD subset. `mode=LIGHTWEIGHT_SUBSET` and `full_schema_validation=false` are deliberate: the script executes supported length/item constraints but does not claim to implement the complete conditional PTD Schema.
+- `ptd_validation_coverage`: records validation target and either `LIGHTWEIGHT_SUBSET` or a verified external `FULL_JSON_SCHEMA` attestation.
 - `gate`: 1.0.x compatibility mirror. It returns `PASS_OFFICIAL_CHECKS` when `release_decision=PASS`; otherwise it mirrors `release_decision`.
 - `coverage`: `PROVIDED` or `MISSING` per content field.
 - `findings`: `status`, `code`, `message`, `source`, optional `attribute`, and optional `evidence`.
 - `counts`: counts for all five evidence states.
 - `candidate`, `listing_snapshot`, and `validation_preview`: normalized traceability summaries; candidate content and seller credentials are not copied into the report.
+- `report_locale` and `content_contract`: display language and current/candidate normalization traceability. `report_locale` never changes `scope.locale` or validation results.
 
 A human report should include identity, separate current/candidate/release conclusions, validation completeness, timestamps, priority actions, completion criteria, recheck method, reconsideration conditions, and untested areas. “No finding” is not “passed” unless the corresponding official check completed successfully.
 

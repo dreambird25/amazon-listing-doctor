@@ -1,0 +1,39 @@
+{
+  "headings": {
+    "title": "Amazon Listing diagnostic report",
+    "summary": "Decision summary",
+    "findings": "Findings",
+    "original_message": "Original message"
+  },
+  "fields": {
+    "current_listing": "Current Listing",
+    "candidate_preview": "Candidate Preview",
+    "candidate_local_validation": "Candidate Local Validation",
+    "release_decision": "Release Decision",
+    "official_validation_completeness": "Official Validation Completeness",
+    "none": "None"
+  },
+  "gate_labels": {
+    "BLOCK": "Block",
+    "REVIEW": "Review required",
+    "PASS": "Candidate preview passed",
+    "NOT_EVALUATED": "Not evaluated",
+    "UNKNOWN": "Unknown",
+    "NO_KNOWN_OFFICIAL_ISSUES": "No known official issues"
+  },
+  "release_labels": {
+    "BLOCK": "Release blocked",
+    "REVIEW": "Manual review required",
+    "PASS": "Current automated-release evidence conditions met",
+    "NOT_EVALUATED": "Release not evaluated",
+    "UNKNOWN": "Release evidence unknown"
+  },
+  "status_labels": {
+    "OFFICIAL_ERROR": "Official error",
+    "OFFICIAL_WARNING": "Official warning",
+    "HEURISTIC_ADVICE": "Optimization advice",
+    "NOT_EVALUATED": "Not evaluated",
+    "SYSTEM_ERROR": "System/evidence error"
+  },
+  "code_titles": {}
+}

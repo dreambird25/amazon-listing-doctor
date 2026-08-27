@@ -19,6 +19,8 @@ REQUIRED = (
     "LICENSE",
     "scripts/diagnose_listing.py",
     "scripts/compliance_report.py",
+    "scripts/render_report.py",
+    "scripts/evaluate_batch.py",
     ".agents/skills/amazon-listing-doctor/SKILL.md",
     ".agents/skills/amazon-listing-doctor/agents/openai.yaml",
     ".agents/skills/amazon-listing-doctor/assets/report-template.md",
@@ -26,10 +28,17 @@ REQUIRED = (
     ".agents/skills/amazon-listing-doctor/references/erp-integration.md",
     ".agents/skills/amazon-listing-doctor/references/quality-assessment.md",
     ".agents/skills/amazon-listing-doctor/references/production-readiness.md",
+    ".agents/skills/amazon-listing-doctor/references/private-golden-dataset.md",
+    ".agents/skills/amazon-listing-doctor/references/localization-calibration.md",
     ".agents/skills/amazon-listing-doctor/references/report-contract.md",
     ".agents/skills/amazon-listing-doctor/scripts/diagnose_listing.py",
     ".agents/skills/amazon-listing-doctor/scripts/merge_report.py",
+    ".agents/skills/amazon-listing-doctor/scripts/render_report.py",
+    ".agents/skills/amazon-listing-doctor/scripts/evaluate_batch.py",
+    ".agents/skills/amazon-listing-doctor/i18n/en.json",
+    ".agents/skills/amazon-listing-doctor/i18n/zh-CN.json",
     ".agents/skills/amazon-listing-doctor/examples/listing-valid.json",
+    ".agents/skills/amazon-listing-doctor/examples/listing-full-schema-valid.json",
     ".agents/skills/amazon-listing-doctor/examples/listing-blocked.json",
     ".agents/skills/amazon-listing-doctor/examples/listing-incomplete.json",
     ".agents/skills/amazon-listing-doctor/examples/listing-practice-sanitized.json",
@@ -56,8 +65,8 @@ def validate_skill() -> None:
         fail("SKILL.md name is invalid")
     if not re.search(r"(?m)^description:\s+.+$", frontmatter):
         fail("SKILL.md description is missing")
-    if not re.search(r"(?m)^\s+version:\s+1\.2\.0\s*$", frontmatter):
-        fail("SKILL.md version is not 1.2.0")
+    if not re.search(r"(?m)^\s+version:\s+1\.3\.0\s*$", frontmatter):
+        fail("SKILL.md version is not 1.3.0")
     if (ROOT / "SKILL.md").exists():
         fail("Root SKILL.md would duplicate the repo-scoped skill")
 

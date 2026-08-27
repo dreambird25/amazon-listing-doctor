@@ -4,6 +4,7 @@
 
 - 当前 Listing：`BLOCK / REVIEW / NO_KNOWN_OFFICIAL_ISSUES / NOT_EVALUATED / UNKNOWN`
 - 候选预检：`BLOCK / REVIEW / PASS / NOT_EVALUATED / UNKNOWN`
+- 候选本地校验：`BLOCK / REVIEW / PASS / NOT_EVALUATED / UNKNOWN`
 - 发布决策：`BLOCK / REVIEW / PASS / NOT_EVALUATED / UNKNOWN`
 - 官方验证完整度：`COMPLETE / INCOMPLETE`
 - 当前快照 / 候选 Preview / 本地 PTD 覆盖：分别列出 `official_evidence_coverage`
@@ -23,6 +24,8 @@
 - PTD scope / version flags / Schema + Meta-Schema checksum / 获取与过期时间：
 - 数据截止时间：
 - 数据来源：
+- 内容校验目标：`CURRENT / CANDIDATE`
+- 报告展示语言：
 
 ## 数据覆盖
 
@@ -44,3 +47,5 @@
 
 | 优先级 | 行动 | 证据 | 完成条件 | 复核方式 | 改判条件 |
 |---|---|---|---|---|---|
+
+展示层可以翻译标签和标题，但必须同时保留稳定 gate/status/code 与 Amazon 原始消息。“候选预检通过”和“满足当前自动放行证据条件”不得改写为“发布成功”。

@@ -38,11 +38,12 @@
 
 API 超时/限流/授权失败、Schema 下载或 checksum 失败、JSON 解析或检查模块异常。候选与 Preview 的 mode、operation、身份范围或 Payload hash 不一致也属于证据链异常。它表示无法判断，不表示 Listing 必然违规。
 
-## 三层结论
+## 四层结论
 
 - `current_listing_gate`：当前 Listings Items issues 与当前内容的 PTD 确定性结果。
 - `candidate_preview_gate`：仅评价与具体候选 Payload 绑定的 `VALIDATION_PREVIEW`。
-- `release_decision`：结合前两者以及 PUT/PATCH 范围给出的保守发布判断。
+- `candidate_local_validation_gate`：仅评价显式 `candidate.content` 的 PTD 子集或外部完整 Schema 校验证据。
+- `release_decision`：结合以上证据以及 PUT/PATCH 范围给出的保守发布判断。
 
 当前 Listing 层先保留已知 `OFFICIAL_ERROR`，再表达其他证据源异常。因此“已知当前 ERROR + 另一证据源异常”必须保留 `BLOCK + INCOMPLETE`，不能用 `UNKNOWN` 隐藏已知 blocker。
 
@@ -54,7 +55,9 @@ API 超时/限流/授权失败、Schema 下载或 checksum 失败、JSON 解析�
 
 PATCH 只覆盖 `touched_attributes`。即使候选预检为 `PASS`，缺少可追溯当前快照或存在未覆盖当前问题时，发布结论仍不得为 `PASS`。兼容字段 `gate` 在 `release_decision=PASS` 时返回旧值 `PASS_OFFICIAL_CHECKS`，其他值与 `release_decision` 相同。
 
-`HEURISTIC_ADVICE` 不参与门禁。内置 PTD 校验仅为 `LIGHTWEIGHT_SUBSET`，因此绑定 Preview 通过时 `candidate_preview_gate` 可为 `PASS`，但 `release_decision` 仍为 `REVIEW`。`PASS_OFFICIAL_CHECKS` 也不保证真实提交已生效。
+`HEURISTIC_ADVICE` 不参与门禁。内置 PTD 校验仅为 `LIGHTWEIGHT_SUBSET`，因此绑定 Preview 通过时 `candidate_preview_gate` 可为 `PASS`，但没有绑定的外部完整 Schema 校验证据时 `release_decision` 仍为 `REVIEW`。外部校验失败属于候选 `OFFICIAL_ERROR`；证据对象错绑或残缺属于 `SYSTEM_ERROR`。`PASS_OFFICIAL_CHECKS` 也不保证真实提交已生效。
+
+`current_content` 与 `candidate.content` 必须独立。PTD finding 通过 `validation_target` 和 `applies_to_current` / `applies_to_candidate` 归属门禁，禁止用候选错误污染当前 Listing，或用当前值替代候选校验。
 
 ## 语义建议
 

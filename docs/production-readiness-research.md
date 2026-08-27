@@ -174,6 +174,12 @@ Amazon 将问题分为：
 - 没有 `includedData=issues`、调用失败或快照过旧时，应报告 `NOT_EVALUATED` / `SYSTEM_ERROR`，不能把 issues 缺失等同为“无问题”。
 - 对持续运行系统，优先订阅 `LISTINGS_ITEM_ISSUES_CHANGE`，在通知后定向读取详情；定时全量轮询只是补偿机制。
 
+### 4.3 v1.3.0 私有只读实践
+
+2026-08-27 使用固定随机种子抽取 30 条私有 Listing，由独立 Luna 子代理只调用读取接口并在内存中运行 v1.2 基线；v1.3 修改和审查修复完成后，再以相同种子、偏移和只读流程重放当前引擎。样本覆盖多个北美/欧洲 Marketplace、17 个 Product Type 以及独立/子体 Listing。v1.3 的 30 条均成功、重复运行门禁全部一致、`SYSTEM_ERROR=0`，门禁与完整度聚合分布和 v1.2 基线一致，证明新契约未破坏 legacy 只读输入。
+
+实践同时发现：legacy issues 存在记录时，另一问题视图可能仍为空；只提供 legacy issues 而缺少身份、`includedData`、request ID 和时效绑定时，即使 issues 数组为空也不能宣称“无官方问题”；未提供 PTD、候选 Payload 与 Preview 时，候选门禁必须全部保持 `NOT_EVALUATED`。这些是本仓库的实测接入事实，不被解释为 Amazon API 的普遍一致性承诺。原始 Listing、标识、文案、图片、Issue code/message 和接口响应均未落盘或提交。
+
 ## 5. 可用于生产的证据合同
 
 建议每次诊断至少保存以下脱敏后的结构化元数据：
@@ -205,8 +211,17 @@ Amazon 将问题分为：
   "candidate": {
     "operation": "PUT_OR_PATCH",
     "payload_hash": "sha256",
+    "current_content_separate": true,
     "local_schema_validation": "VALID_OR_INVALID",
-    "local_validation_coverage": "FULL_OR_LIGHTWEIGHT_SUBSET"
+    "local_validation_coverage": "FULL_JSON_SCHEMA_OR_LIGHTWEIGHT_SUBSET",
+    "validator_attestation": {
+      "validator_version": "version",
+      "schema_draft": "2019-09",
+      "amazon_vocabulary": true,
+      "schema_checksum": "checksum",
+      "meta_schema_checksum": "checksum",
+      "validated_at": "RFC3339 timestamp"
+    }
   },
   "validation_preview": {
     "captured_at": "RFC3339 timestamp",
@@ -245,6 +260,7 @@ Amazon 将问题分为：
 - [ ] 诊断、Preview 和正式提交是不同权限；诊断流程不自动写 Listing。
 - [ ] 发布后通过通知或定向查询闭环异步 issues/status。
 - [ ] 公共测试只提交合成或不可逆脱敏数据，不提交真实商品响应。
+- [ ] 私有 Golden Dataset 固定随机种子并重复运行；公开结果只保留聚合结论。
 
 ## 8. 官方来源索引
 

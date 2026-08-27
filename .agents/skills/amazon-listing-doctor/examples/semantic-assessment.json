@@ -1,5 +1,7 @@
 {
-  "assessment_version": "1.0",
+  "assessment_version": "1.1",
+  "assessment_model": "example-semantic-model",
+  "prompt_version": "quality-v1.3",
   "assessed_at": "2026-01-01T00:00:03Z",
   "dimensions": {
     "content_completeness": {

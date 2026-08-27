@@ -23,6 +23,7 @@ class MergeReportTest(unittest.TestCase):
         return {
             "current_listing_gate": "NO_KNOWN_OFFICIAL_ISSUES",
             "candidate_preview_gate": "PASS",
+            "candidate_local_validation_gate": "PASS",
             "release_decision": "PASS",
             "official_validation_completeness": "COMPLETE",
             "official_evidence_coverage": {},
@@ -33,7 +34,9 @@ class MergeReportTest(unittest.TestCase):
 
     def assessment(self, rating="STRONG"):
         return {
-            "assessment_version": "1.0",
+            "assessment_version": "1.1",
+            "assessment_model": "test-model",
+            "prompt_version": "quality-v1.3",
             "assessed_at": "2026-01-01T00:00:00Z",
             "dimensions": {
                 name: {
@@ -97,6 +100,25 @@ class MergeReportTest(unittest.TestCase):
         merged, valid = MODULE.merge_report({}, self.assessment())
         self.assertFalse(valid)
         self.assertTrue(any("official report is missing fields" in error for error in merged["errors"]))
+
+    def test_assessment_trace_metadata_is_required_and_preserved(self):
+        assessment = self.assessment()
+        assessment.pop("assessment_model")
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("assessment_model is required" in error for error in merged["errors"]))
+
+        assessment = self.assessment()
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertTrue(valid)
+        self.assertEqual("test-model", merged["quality_assessment_trace"]["assessment_model"])
+
+    def test_assessed_at_requires_timezone(self):
+        assessment = self.assessment()
+        assessment["assessed_at"] = "2026-01-01T00:00:00"
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("timezone-aware" in error for error in merged["errors"]))
 
 
 if __name__ == "__main__":

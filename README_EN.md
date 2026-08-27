@@ -4,7 +4,7 @@ A repo-discoverable Codex Skill for evidence-first Amazon Listing diagnostics. I
 
 This public fork of [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) contains no company-specific code, endpoints, schemas, account identifiers, SKUs, ASINs, credentials, or runtime configuration.
 
-Current version: **v1.2.0**. This release adds production evidence binding and a sanitized real-world replay. See [`CHANGELOG.md`](CHANGELOG.md).
+Current version: **v1.3.0**. This release adds real Amazon attribute-array adaptation, localized reports, current/candidate content isolation, a bound full-PTD-validation evidence lane, and private Golden Dataset regression tooling. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Three independent conclusions
 
@@ -55,11 +55,11 @@ The public version does not authenticate to Seller Central or call SP-API. A use
 
 ## Production status
 
-v1.2.0 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass.
+v1.3.0 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass.
 
 Unattended automatic release still requires a full Draft 2019-09 validator with Amazon vocabulary support, independent Preview rate limiting, an authorized submission workflow, and post-submission issue/status reconciliation in the integrating system. See the [official-source production research](docs/production-readiness-research.md) and [production integration guide](.agents/skills/amazon-listing-doctor/references/production-readiness.md).
 
-A real read-only Listing exercise exposed a known Amazon ERROR while another structured view had not caught up. The public regression fixture preserves only the required behavior—`BLOCK + INCOMPLETE`. [`listing-practice-sanitized.json`](.agents/skills/amazon-listing-doctor/examples/listing-practice-sanitized.json) replaces every identity, content value, issue code, timestamp, and dimension and contains no source product data.
+A fixed-seed, read-only practice run covered 30 private Listings across multiple North American/European marketplaces and Product Types. All reruns were deterministic and produced no engine system errors; the run also confirmed that issue views can disagree and that missing traceable snapshots, PTD, or Preview evidence must fail closed. No record, identifier, or raw response from those 30 Listings is stored in this public repository.
 
 ## Developer CLI
 
@@ -69,7 +69,18 @@ python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/e
 
 The root command is a compatibility wrapper around the canonical Skill script. Both deterministic scripts use only the Python standard library, make no network calls, and perform no writes.
 
-The local PTD engine executes only its supported length/item constraints and reports `ptd_validation_coverage=LIGHTWEIGHT_SUBSET`; it does not claim complete PTD Schema validation. Even with a bound, valid `VALIDATION_PREVIEW`, the bundled engine therefore keeps `release_decision=REVIEW`. Preview proves only that the candidate preview is valid, not that it was published or is ready for unattended release.
+The deterministic CLI needs no OpenAI API key. When Codex performs the seven-dimension semantic assessment it uses the user's current Agent environment; no model credential is stored in this public repository. Other model integrations remain private adapter configuration.
+
+The local PTD engine executes only supported length/item constraints and reports `LIGHTWEIGHT_SUBSET`. An adapter may supply a full-validator attestation bound to the Schema checksums, candidate payload hash, validator/version, and time; only that evidence can set `FULL_JSON_SCHEMA`. A bare boolean is rejected.
+
+Unattended evidence also requires `requirementsEnforced=ENFORCED`; a valid external result against a `NOT_ENFORCED` Schema remains manual review.
+
+```bash
+python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown
+python scripts/evaluate_batch.py --file private-golden-dataset.jsonl
+```
+
+`scope.locale` controls Listing validation; `report_locale`/`--lang` controls display only. Candidate Preview `PASS` means “candidate preview passed,” never “published successfully.” Batch evaluation emits aggregate gates and hashed sample references, not source Listing content.
 
 The quality branch follows [`quality-assessment.md`](.agents/skills/amazon-listing-doctor/references/quality-assessment.md) and is validated and merged by `scripts/merge_report.py` inside the Skill. Official input/output is defined in [`report-contract.md`](.agents/skills/amazon-listing-doctor/references/report-contract.md).
 

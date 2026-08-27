@@ -2,6 +2,25 @@
 
 本项目采用语义化版本。版本记录描述公共契约和行为变化，不登记任何接入方私有实现或数据。
 
+## [1.3.0] - 2026-08-27
+
+### 生产适配
+
+- 拆分 `current_content` 与 `candidate.content`，新增 `candidate_local_validation_gate`，避免候选 PTD 结果污染当前 Listing 门禁。
+- 支持 `attributes` 完整数组、`language_tag`、`marketplace_id` 和适配器声明的 `attribute_aliases`；不再只取数组首项或依赖固定字段名。
+- 新增外部完整 PTD Validator 证据契约。只有绑定 Draft 2019-09/Amazon vocabulary 能力、Schema/Meta-Schema checksum、候选 Payload hash、校验器版本和时间的对象才能设置 `FULL_JSON_SCHEMA`；裸布尔值无效。
+- 七维语义质量契约升级为 `assessment_version=1.1`，强制记录 `assessment_model`、`prompt_version` 和带时区的 `assessed_at`。
+
+### 报告与实践
+
+- 新增独立 `report_locale`、`zh-CN`/`en` 资源包和 Markdown/JSON 渲染器；稳定 code 与 Amazon 原始消息保持不变，中文 `PASS` 不描述为发布成功。
+- 新增私有 Golden Dataset 批量工具，只输出聚合分布、确定性和哈希化样本引用。
+- 由独立 Luna 子代理使用固定随机种子完成 30 条私有 Listing 只读实践，并在最终 v1.3 工作树按相同样本重放；v1.3 重复运行稳定、无系统异常，聚合门禁与 v1.2 基线一致。实践还验证缺失证据安全降级，并发现不同 issue 视图可能不同步。未提交任何原始 Listing 数据或标识。
+
+### 验证
+
+- 行为测试增加到 65 个，覆盖真实属性别名/数组、多语言范围、当前/候选隔离、完整 Schema 证据绑定、中文渲染和私有批量输出边界。
+
 ## [1.2.0] - 2026-08-27
 
 ### 生产门禁

@@ -4,7 +4,7 @@ description: "Diagnose Amazon seller Listings from JSON, Excel/CSV exports, or p
 license: MIT
 metadata:
   category: ecommerce/amazon
-  version: 1.2.0
+  version: 1.3.0
   upstream: buluslan/amazon-listing-doctor
 ---
 
@@ -23,14 +23,14 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
 ## Diagnose
 
 1. Establish the evidence lane, identity, product type, requirements, parentage level, locale, source, and timezone-aware `data_as_of`. This step is complete when every unavailable scope field is explicit rather than silently defaulted.
-2. Normalize the supplied source into the public JSON contract. Read [the input and report contract](references/report-contract.md) when transforming JSON, tables, exports, or API responses. For an external system integration, also read [the vendor-neutral adapter guide](references/erp-integration.md).
+2. Normalize the supplied source into the public JSON contract. Keep `current_content` and `candidate.content` separate. Preserve every Amazon attribute array element with its `language_tag` and `marketplace_id`; when a source uses a non-PTD name such as `item_highlight`, declare it in `attribute_aliases` instead of hard-coding a guess. Read [the input and report contract](references/report-contract.md) when transforming JSON, tables, exports, or API responses. For an external system integration, also read [the vendor-neutral adapter guide](references/erp-integration.md).
 3. Resolve the Skill directory containing this `SKILL.md`, resolve user files to absolute paths, change to the Skill directory, and run its deterministic engine:
 
    ```bash
    python scripts/diagnose_listing.py --file listing.json
    ```
 
-   This step is complete when the report contains separate `current_listing_gate`, `candidate_preview_gate`, `release_decision`, `official_validation_completeness`, `official_evidence_coverage`, and `ptd_validation_coverage` fields. Treat `ptd_validation_coverage.mode=LIGHTWEIGHT_SUBSET` as an explicit limit, never as complete PTD Schema validation; the bundled engine must keep `release_decision=REVIEW` even when a bound Preview passes. Exit codes are `0` for no official/system error, `1` for an official error only, `2` for a system error only, and `3` when both exist.
+   This step is complete when the report contains separate `current_listing_gate`, `candidate_preview_gate`, `candidate_local_validation_gate`, `release_decision`, `official_validation_completeness`, `official_evidence_coverage`, and `ptd_validation_coverage` fields. Treat `ptd_validation_coverage.mode=LIGHTWEIGHT_SUBSET` as an explicit limit, never as complete PTD Schema validation. An external full validator may enable `FULL_JSON_SCHEMA` only through the bound evidence contract in [the production readiness guide](references/production-readiness.md); a bare boolean is invalid. Exit codes are `0` for no official/system error, `1` for an official error only, `2` for a system error only, and `3` when both exist.
 4. When the user asks whether the content is good, or requests optimization advice, read [the quality assessment contract](references/quality-assessment.md). Assess every defined dimension with direct Listing evidence or mark it `NOT_EVALUATED`, then merge it with the deterministic report:
 
    ```bash
@@ -40,19 +40,27 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
    ```
 
    This step is complete when all seven dimensions are present, every evaluated rating cites evidence, and the merge script returns `merge_status=OK`. Use the script-derived verdict; do not invent a score or manually override it.
-5. Render [the report template](assets/report-template.md). Lead with official blockers, official completeness, quality verdict, and at most three actions. Include completion criteria, recheck method, and untested areas.
+5. Render in the user's language while preserving stable codes and Amazon's original message. `scope.locale` controls Listing evidence; `report_locale` controls display and must never change validation. For Chinese Markdown:
+
+   ```bash
+   python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown
+   ```
+
+   Lead with official blockers, official completeness, quality verdict, and at most three actions. `PASS` means the current evidence conditions are met; never label it “published successfully.”
+6. For regression against a private Golden Dataset, use `scripts/evaluate_batch.py`. Never add raw private Listing records to this repository; commit only synthetic fixtures and non-identifying aggregate conclusions. Read [the private practice guide](references/private-golden-dataset.md) before sampling production-like data.
 
 ## Evidence interpretation
 
 Read [the evidence model](references/evidence-model.md) when classifying official findings.
 
-- Amazon `ERROR` and traceable PTD violations are `OFFICIAL_ERROR`.
+- Amazon `ERROR`, traceable PTD violations, and a bound full-schema validation failure are `OFFICIAL_ERROR`.
 - Amazon `WARNING` and `INFO` are `OFFICIAL_WARNING`; preserve the original severity.
 - Content-quality observations are `HEURISTIC_ADVICE` and never change the official gate.
 - Missing inputs are `NOT_EVALUATED`; malformed or mismatched evidence is `SYSTEM_ERROR`.
 - Only a fresh, fully bound `mode=VALIDATION_PREVIEW` response with status `VALID` can pass the same candidate payload. Bind scope, operation, Payload SHA-256, request fingerprint, and ordered timestamps. `ACCEPTED` is a real-submission response mismatch.
 - A Preview ERROR whose scope, operation, or fingerprint does not match the candidate remains visible but has `applies_to_candidate=false`; it cannot block that candidate.
 - A PATCH preview cannot produce release `PASS` without a traceable current Listings Items snapshot.
+- An external full validator must support JSON Schema Draft 2019-09 plus Amazon's PTD vocabulary and bind validator version, Schema checksums, candidate Payload SHA-256, and timestamp. The Skill validates this attestation; it does not implement or certify the external validator.
 
 For production integration or an automatic release decision, read [the production readiness guide](references/production-readiness.md). A valid Preview is low-throughput evidence, not a substitute for full local PTD Schema validation or post-submission verification.
 

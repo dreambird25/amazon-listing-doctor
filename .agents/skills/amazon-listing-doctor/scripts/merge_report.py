@@ -7,6 +7,7 @@ import argparse
 import copy
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ PRIORITIES = {"HIGH", "MEDIUM", "LOW"}
 OFFICIAL_REPORT_FIELDS = {
     "current_listing_gate",
     "candidate_preview_gate",
+    "candidate_local_validation_gate",
     "release_decision",
     "official_validation_completeness",
     "official_evidence_coverage",
@@ -38,14 +40,27 @@ def nonempty_text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def timezone_aware_timestamp(value: Any) -> bool:
+    if not nonempty_text(value):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
 def validate_assessment(assessment: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(assessment, dict):
         return ["semantic assessment must be a JSON object"]
-    if assessment.get("assessment_version") != "1.0":
-        errors.append("assessment_version must be 1.0")
-    if not nonempty_text(assessment.get("assessed_at")):
-        errors.append("assessed_at is required")
+    if assessment.get("assessment_version") != "1.1":
+        errors.append("assessment_version must be 1.1")
+    for field in ("assessment_model", "prompt_version"):
+        if not nonempty_text(assessment.get(field)):
+            errors.append(f"{field} is required")
+    if not timezone_aware_timestamp(assessment.get("assessed_at")):
+        errors.append("assessed_at must be a timezone-aware ISO-8601 timestamp")
 
     dimensions = assessment.get("dimensions")
     if not isinstance(dimensions, dict):
@@ -151,6 +166,12 @@ def merge_report(official_report: Any, assessment: Any) -> tuple[dict[str, Any],
         },
         "quality_evidence_completeness": completeness,
         "semantic_assessment": assessment,
+        "quality_assessment_trace": {
+            "assessment_version": assessment["assessment_version"],
+            "assessment_model": assessment["assessment_model"],
+            "prompt_version": assessment["prompt_version"],
+            "assessed_at": assessment["assessed_at"],
+        },
         "performance_verdict": "NOT_EVALUATED",
     })
     return result, True

@@ -87,11 +87,128 @@ def is_provided(value: Any) -> bool:
     return True
 
 
-def content_value(content: dict[str, Any], attribute: str) -> Any:
-    for field, mapped in CONTENT_ATTRIBUTE_MAP.items():
-        if mapped == attribute:
-            return content.get(field)
-    return content.get(attribute)
+def normalize_attribute_aliases(value: Any) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    if value is None:
+        return {}, []
+    if not isinstance(value, dict):
+        return {}, [finding(
+            SYSTEM_ERROR,
+            "ATTRIBUTE_ALIASES_INVALID",
+            "attribute_aliases must be an object mapping source names to PTD attribute names.",
+            "INPUT",
+        )]
+    aliases: dict[str, str] = {}
+    rows: list[dict[str, Any]] = []
+    for source, target in value.items():
+        if not isinstance(source, str) or not source.strip() \
+                or not isinstance(target, str) or not target.strip():
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "ATTRIBUTE_ALIAS_INVALID",
+                "Each attribute alias must map a non-empty string to a non-empty string.",
+                "INPUT",
+                evidence={"source": source, "target": target},
+            ))
+            continue
+        aliases[source.strip()] = target.strip()
+    for source in aliases:
+        visited: set[str] = set()
+        name = source
+        while name in aliases:
+            if name in visited:
+                rows.append(finding(
+                    SYSTEM_ERROR,
+                    "ATTRIBUTE_ALIAS_CYCLE",
+                    "attribute_aliases contains a cycle and cannot be resolved safely.",
+                    "INPUT",
+                    evidence={"source": source},
+                ))
+                break
+            visited.add(name)
+            name = aliases[name]
+    return aliases, rows
+
+
+def canonical_attribute(attribute: Any, aliases: dict[str, str]) -> str:
+    name = str(attribute or "")
+    visited: set[str] = set()
+    while name not in visited:
+        visited.add(name)
+        if name in aliases:
+            name = aliases[name]
+            continue
+        mapped = CONTENT_ATTRIBUTE_MAP.get(name)
+        if mapped and mapped != name:
+            name = mapped
+            continue
+        break
+    return name
+
+
+def attribute_elements(
+        content: dict[str, Any], attribute: str, aliases: dict[str, str],
+        scope: dict[str, Any],
+) -> tuple[list[dict[str, Any]], bool]:
+    """Resolve all scope-matching Amazon attribute elements without first-item shortcuts."""
+    attributes = content.get("attributes")
+    if attributes is not None and not isinstance(attributes, dict):
+        return [], False
+
+    candidate_names: list[str] = [attribute]
+    if attribute in aliases:
+        candidate_names.append(aliases[attribute])
+    candidate_names.extend(source for source, target in aliases.items() if target == attribute)
+    candidate_names.extend(field for field, mapped in CONTENT_ATTRIBUTE_MAP.items() if mapped == attribute)
+    canonical_requested = canonical_attribute(attribute, aliases)
+    candidate_names.extend(
+        name for name in (*aliases.keys(), *aliases.values(), *CONTENT_ATTRIBUTE_MAP.keys())
+        if canonical_attribute(name, aliases) == canonical_requested
+    )
+    candidate_names = list(dict.fromkeys(candidate_names))
+
+    raw: Any = None
+    resolved_name: str | None = None
+    for name in candidate_names:
+        if isinstance(attributes, dict) and name in attributes:
+            raw = attributes[name]
+            resolved_name = name
+            break
+        if name in content:
+            raw = content[name]
+            resolved_name = name
+            break
+    if raw is None:
+        return [], True
+
+    values = raw if isinstance(raw, list) else [raw]
+    elements: list[dict[str, Any]] = []
+    target_marketplace = str(scope.get("marketplace_id") or "")
+    target_locale = str(scope.get("locale") or "")
+    for index, item in enumerate(values):
+        if isinstance(item, dict) and "value" in item:
+            element = {
+                "value": item.get("value"),
+                "marketplace_id": item.get("marketplace_id"),
+                "language_tag": item.get("language_tag"),
+                "index": index,
+                "resolved_attribute": resolved_name,
+            }
+        else:
+            element = {
+                "value": item,
+                "marketplace_id": None,
+                "language_tag": None,
+                "index": index,
+                "resolved_attribute": resolved_name,
+            }
+        marketplace = str(element.get("marketplace_id") or "")
+        language_tag = str(element.get("language_tag") or "")
+        if marketplace and target_marketplace and marketplace != target_marketplace:
+            continue
+        if language_tag and target_locale and language_tag != target_locale:
+            continue
+        elements.append(element)
+    return elements, True
 
 
 def measure(value: Any, unit: str) -> int | None:
@@ -295,34 +412,156 @@ def evaluate_listing_snapshot(
 
 def ptd_coverage(status: str, supported: int = 0, unsupported: int = 0,
                  evaluated: int = 0, scope_bound: bool = False,
-                 time_valid: bool = False) -> dict[str, Any]:
+                 time_valid: bool = False, validation_target: str = "CURRENT",
+                 full_schema_validation: bool = False) -> dict[str, Any]:
     return {
-        "mode": "LIGHTWEIGHT_SUBSET",
+        "mode": "FULL_JSON_SCHEMA" if full_schema_validation else "LIGHTWEIGHT_SUBSET",
         "status": status,
+        "validation_target": validation_target,
         "supported_constraint_count": supported,
         "unsupported_constraint_count": unsupported,
         "evaluated_constraint_count": evaluated,
         "scope_bound": scope_bound,
         "time_valid": time_valid,
-        "full_schema_validation": False,
+        "full_schema_validation": full_schema_validation,
     }
+
+
+def evaluate_full_schema_validation(
+        proof: Any, ptd: dict[str, Any], candidate: dict[str, Any],
+        evaluation_time: datetime | None,
+) -> tuple[list[dict[str, Any]], bool]:
+    if proof is None:
+        return [finding(
+            NOT_EVALUATED,
+            "FULL_SCHEMA_VALIDATION_MISSING",
+            "No bound external full-schema validation evidence was supplied for the candidate.",
+            "PTD",
+        )], False
+    if not isinstance(proof, dict):
+        return [finding(
+            SYSTEM_ERROR,
+            "FULL_SCHEMA_VALIDATION_INVALID",
+            "full_schema_validation must be a traceable evidence object, not a boolean assertion.",
+            "PTD",
+        )], False
+
+    required = (
+        "complete", "valid", "validator", "validator_version", "schema_draft",
+        "amazon_vocabulary", "schema_checksum", "meta_schema_checksum",
+        "payload_sha256", "validated_at", "errors",
+    )
+    missing = [name for name in required if name not in proof]
+    if missing:
+        return [finding(
+            SYSTEM_ERROR,
+            "FULL_SCHEMA_VALIDATION_EVIDENCE_INCOMPLETE",
+            "Full-schema validation evidence is missing required binding fields.",
+            "PTD",
+            evidence={"missing": missing},
+        )], False
+
+    rows: list[dict[str, Any]] = []
+    binding_valid = True
+    if proof.get("complete") is not True or not isinstance(proof.get("valid"), bool):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "FULL_SCHEMA_VALIDATION_FLAGS_INVALID",
+            "complete must be true and valid must be a boolean.",
+            "PTD",
+        ))
+    if str(proof.get("schema_draft")) != "2019-09" or proof.get("amazon_vocabulary") is not True:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "FULL_SCHEMA_VALIDATOR_CAPABILITY_MISMATCH",
+            "The adapter must attest JSON Schema Draft 2019-09 and Amazon vocabulary support.",
+            "PTD",
+        ))
+    for field in ("validator", "validator_version"):
+        if not is_provided(proof.get(field)):
+            binding_valid = False
+    bindings = {
+        "schema_checksum": ptd.get("schema_checksum"),
+        "meta_schema_checksum": ptd.get("meta_schema_checksum"),
+        "payload_sha256": candidate.get("payload_sha256"),
+    }
+    for field, expected in bindings.items():
+        actual = proof.get(field)
+        if not is_provided(expected) or str(actual).lower() != str(expected).lower():
+            binding_valid = False
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "FULL_SCHEMA_VALIDATION_BINDING_MISMATCH",
+                f"Full-schema validation {field} does not match its bound evidence.",
+                "PTD",
+                evidence={"field": field, "expected": expected, "actual": actual},
+            ))
+    errors = proof.get("errors")
+    if not isinstance(errors, list):
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "FULL_SCHEMA_VALIDATION_ERRORS_INVALID",
+            "Full-schema validation errors must be an array.",
+            "PTD",
+        ))
+        errors = []
+
+    validated_at = parse_timestamp(proof.get("validated_at"))
+    created_at = parse_timestamp(candidate.get("created_at"))
+    ptd_fetched_at = parse_timestamp(ptd.get("fetched_at"))
+    if validated_at is None or created_at is None or ptd_fetched_at is None \
+            or evaluation_time is None:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "FULL_SCHEMA_VALIDATION_TIMESTAMP_INVALID",
+            "Full-schema validation timestamps must be timezone-aware and fully bound.",
+            "PTD",
+        ))
+    elif validated_at < max(created_at, ptd_fetched_at) or validated_at > evaluation_time:
+        binding_valid = False
+        rows.append(finding(
+            SYSTEM_ERROR,
+            "FULL_SCHEMA_VALIDATION_TIME_ORDER_INVALID",
+            "validated_at must follow the candidate and PTD fetch and not exceed data_as_of.",
+            "PTD",
+        ))
+
+    if not binding_valid:
+        return rows, False
+    if proof.get("valid") is False or errors:
+        rows.append(finding(
+            OFFICIAL_ERROR,
+            "FULL_SCHEMA_VALIDATION_FAILED",
+            "The bound candidate failed full PTD JSON Schema validation.",
+            "PTD",
+            evidence={"error_count": len(errors), "validator": proof.get("validator")},
+        ))
+        return rows, False
+    return rows, True
 
 
 def evaluate_ptd(
         scope: dict[str, Any], content: dict[str, Any], ptd: Any,
-        evaluation_time: datetime | None,
+        evaluation_time: datetime | None, aliases: dict[str, str] | None = None,
+        validation_target: str = "CURRENT", candidate: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], bool, dict[str, Any]]:
+    aliases = aliases or {}
+    candidate = candidate or {}
     if ptd is None:
         return [finding(
             NOT_EVALUATED,
             "PTD_MISSING",
             "No Product Type Definition was supplied; local official-constraint checks were not run.",
             "PTD",
-        )], False, ptd_coverage("NOT_EVALUATED")
+        )], False, ptd_coverage("NOT_EVALUATED", validation_target=validation_target)
     if not isinstance(ptd, dict):
         return [finding(
             SYSTEM_ERROR, "PTD_INVALID", "PTD data is not an object.", "PTD", evidence=ptd
-        )], False, ptd_coverage("SYSTEM_ERROR")
+        )], False, ptd_coverage("SYSTEM_ERROR", validation_target=validation_target)
 
     rows: list[dict[str, Any]] = []
     traceability_valid = True
@@ -333,7 +572,7 @@ def evaluate_ptd(
             "PTD_UNAVAILABLE",
             "The current PTD schema is unavailable; attribute limits were not inferred.",
             "PTD",
-        )], False, ptd_coverage("NOT_EVALUATED")
+        )], False, ptd_coverage("NOT_EVALUATED", validation_target=validation_target)
     if status == "AVAILABLE":
         status = "FRESH"
     elif status == "STALE":
@@ -345,7 +584,7 @@ def evaluate_ptd(
             "The PTD status is unknown and the schema cannot be used safely.",
             "PTD",
             evidence=status,
-        )], False, ptd_coverage("SYSTEM_ERROR")
+        )], False, ptd_coverage("SYSTEM_ERROR", validation_target=validation_target)
     if status == "STALE_WITHIN_GRACE":
         rows.append(finding(
             OFFICIAL_WARNING,
@@ -389,6 +628,13 @@ def evaluate_ptd(
             "PTD requirements_enforced must be ENFORCED or NOT_ENFORCED.",
             "PTD",
             evidence=requirements_enforced,
+        ))
+    elif validation_target == "CANDIDATE" and requirements_enforced == "NOT_ENFORCED":
+        rows.append(finding(
+            OFFICIAL_WARNING,
+            "PTD_REQUIREMENTS_NOT_ENFORCED",
+            "Candidate PTD evidence was retrieved with requirements_enforced=NOT_ENFORCED and cannot support unattended release.",
+            "PTD",
         ))
     for field in ("seller_id", "marketplace_id", "product_type", "requirements", "parentage_level", "locale"):
         if is_provided(ptd_scope.get(field)) and is_provided(scope.get(field)) \
@@ -481,18 +727,46 @@ def evaluate_ptd(
                 "PTD",
             ))
 
+    full_schema_validated = False
+    if validation_target == "CANDIDATE":
+        full_rows, full_schema_validated = evaluate_full_schema_validation(
+            ptd.get("full_schema_validation"), ptd, candidate, evaluation_time
+        )
+        rows.extend(full_rows)
+        full_schema_validated = (
+            full_schema_validated and scope_bound and traceability_valid and time_valid
+        )
+        if full_schema_validated:
+            return rows, True, ptd_coverage(
+                "FULLY_EVALUATED",
+                scope_bound=scope_bound,
+                time_valid=time_valid,
+                validation_target=validation_target,
+                full_schema_validation=True,
+            )
+
     constraints = ptd.get("constraints")
     if not isinstance(constraints, dict) or not constraints:
-        rows.append(finding(
-            NOT_EVALUATED,
-            "PTD_CONSTRAINTS_MISSING",
-            "The PTD input contains no executable constraints.",
-            "PTD",
-        ))
+        if not full_schema_validated:
+            rows.append(finding(
+                NOT_EVALUATED,
+                "PTD_CONSTRAINTS_MISSING",
+                "The PTD input contains no executable constraints.",
+                "PTD",
+            ))
         if not (scope_bound and traceability_valid and time_valid):
-            mark_unbound_official_findings(rows, "PTD", "applies_to_current")
-        return rows, False, ptd_coverage(
-            "NOT_EVALUATED", scope_bound=scope_bound, time_valid=time_valid
+            mark_unbound_official_findings(
+                rows, "PTD",
+                "applies_to_candidate" if validation_target == "CANDIDATE"
+                else "applies_to_current",
+            )
+        evaluated = full_schema_validated and scope_bound and traceability_valid and time_valid
+        return rows, evaluated, ptd_coverage(
+            "FULLY_EVALUATED" if full_schema_validated else "NOT_EVALUATED",
+            scope_bound=scope_bound,
+            time_valid=time_valid,
+            validation_target=validation_target,
+            full_schema_validation=full_schema_validated,
         )
 
     supported_types = {"MAX_LENGTH", "MIN_LENGTH", "MAX_ITEMS", "MIN_ITEMS"}
@@ -512,12 +786,21 @@ def evaluate_ptd(
                 rules,
             ))
             continue
-        value = content_value(content, attribute)
-        if not is_provided(value):
+        elements, attributes_valid = attribute_elements(content, attribute, aliases, scope)
+        if not attributes_valid:
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "CONTENT_ATTRIBUTES_INVALID",
+                "content.attributes must be an object when supplied.",
+                "PTD",
+                attribute,
+            ))
+            continue
+        if not elements:
             rows.append(finding(
                 NOT_EVALUATED,
                 "ATTRIBUTE_VALUE_MISSING",
-                "The current attribute value is missing, so PTD constraints could not be evaluated.",
+                "No value matching the diagnostic marketplace and locale was found for this attribute.",
                 "PTD",
                 attribute,
             ))
@@ -548,45 +831,64 @@ def evaluate_ptd(
                 ))
                 continue
             supported_count += 1
-            actual = measure(value, unit)
-            if actual is None:
-                rows.append(finding(
-                    SYSTEM_ERROR,
-                    "PTD_VALUE_TYPE_MISMATCH",
-                    "The attribute value type does not match the PTD measurement unit.",
-                    "PTD",
-                    attribute,
-                    {"rule": rule, "value_type": type(value).__name__},
-                ))
-                continue
-            evaluated_count += 1
-            violated = (
-                rule_type in {"MAX_LENGTH", "MAX_ITEMS"} and actual > limit
-            ) or (
-                rule_type in {"MIN_LENGTH", "MIN_ITEMS"} and actual < limit
-            )
-            if violated:
-                rows.append(finding(
-                    OFFICIAL_ERROR,
-                    "PTD_CONSTRAINT_VIOLATION",
-                    f"Measured value {actual} violates PTD {rule_type}={limit} ({unit}).",
-                    "PTD",
-                    attribute,
-                    {
-                        "actual": actual,
-                        "limit": limit,
-                        "unit": unit,
-                        "schema_checksum": ptd.get("schema_checksum"),
-                        "resolved_version": ptd.get("resolved_version"),
-                    },
-                ))
+            measured_elements = [{"value": [element.get("value") for element in elements]}] \
+                if unit == "ITEMS" else elements
+            for element in measured_elements:
+                value = element.get("value")
+                actual = measure(value, unit)
+                if actual is None:
+                    rows.append(finding(
+                        SYSTEM_ERROR,
+                        "PTD_VALUE_TYPE_MISMATCH",
+                        "The attribute value type does not match the PTD measurement unit.",
+                        "PTD",
+                        attribute,
+                        {
+                            "rule": rule,
+                            "value_type": type(value).__name__,
+                            "element_index": element.get("index"),
+                        },
+                    ))
+                    continue
+                evaluated_count += 1
+                violated = (
+                    rule_type in {"MAX_LENGTH", "MAX_ITEMS"} and actual > limit
+                ) or (
+                    rule_type in {"MIN_LENGTH", "MIN_ITEMS"} and actual < limit
+                )
+                if violated:
+                    rows.append(finding(
+                        OFFICIAL_ERROR,
+                        "PTD_CONSTRAINT_VIOLATION",
+                        f"Measured value {actual} violates PTD {rule_type}={limit} ({unit}).",
+                        "PTD",
+                        attribute,
+                        {
+                            "actual": actual,
+                            "limit": limit,
+                            "unit": unit,
+                            "element_index": element.get("index"),
+                            "language_tag": element.get("language_tag"),
+                            "marketplace_id": element.get("marketplace_id"),
+                            "resolved_attribute": element.get("resolved_attribute"),
+                            "schema_checksum": ptd.get("schema_checksum"),
+                            "resolved_version": ptd.get("resolved_version"),
+                        },
+                    ))
     binding_valid = scope_bound and traceability_valid and time_valid
     if not binding_valid:
-        mark_unbound_official_findings(rows, "PTD", "applies_to_current")
+        mark_unbound_official_findings(
+            rows, "PTD",
+            "applies_to_candidate" if validation_target == "CANDIDATE"
+            else "applies_to_current",
+        )
     ptd_complete = binding_valid and not any(
         row["status"] in {NOT_EVALUATED, SYSTEM_ERROR} for row in rows
     )
-    coverage_status = "EVALUATED_SUBSET" if ptd_complete else "PARTIALLY_EVALUATED"
+    if full_schema_validated:
+        coverage_status = "FULLY_EVALUATED"
+    else:
+        coverage_status = "EVALUATED_SUBSET" if ptd_complete else "PARTIALLY_EVALUATED"
     return rows, ptd_complete, ptd_coverage(
         coverage_status,
         supported=supported_count,
@@ -594,6 +896,8 @@ def evaluate_ptd(
         evaluated=evaluated_count,
         scope_bound=scope_bound,
         time_valid=time_valid,
+        validation_target=validation_target,
+        full_schema_validation=full_schema_validated,
     )
 
 
@@ -834,6 +1138,7 @@ def evaluate_validation_preview(
         "parentage_level": candidate.get("parentage_level"),
         "payload_sha256": candidate.get("payload_sha256"),
         "touched_attributes": candidate.get("touched_attributes"),
+        "attribute_aliases": candidate.get("attribute_aliases") or {},
         "created_at": candidate.get("created_at"),
         "request_fingerprint_sha256": request_fingerprint(scope, candidate),
     }
@@ -1109,18 +1414,11 @@ def evaluate_validation_preview(
 
 
 def calculate_gate(rows: list[dict[str, Any]], sources: set[str], evaluated: bool,
-                   pass_value: str = "PASS") -> str:
+                   pass_value: str = "PASS", applicability_field: str | None = None) -> str:
     relevant = [
         row for row in rows
         if row["source"] in sources
-        and not (
-            row["status"] in {OFFICIAL_ERROR, OFFICIAL_WARNING}
-            and row.get("applies_to_candidate") is False
-        )
-        and not (
-            row["status"] in {OFFICIAL_ERROR, OFFICIAL_WARNING}
-            and row.get("applies_to_current") is False
-        )
+        and not (applicability_field and row.get(applicability_field) is False)
     ]
     if any(row["status"] == OFFICIAL_ERROR for row in relevant):
         return "BLOCK"
@@ -1133,7 +1431,8 @@ def calculate_gate(rows: list[dict[str, Any]], sources: set[str], evaluated: boo
     return pass_value if evaluated else "NOT_EVALUATED"
 
 
-def decide_release(current_gate: str, candidate_gate: str, candidate: dict[str, Any],
+def decide_release(current_gate: str, candidate_gate: str, candidate_local_gate: str,
+                   candidate: dict[str, Any],
                    rows: list[dict[str, Any]],
                    listing_snapshot_evaluated: bool,
                    full_schema_validated: bool) -> tuple[str, list[str]]:
@@ -1152,6 +1451,14 @@ def decide_release(current_gate: str, candidate_gate: str, candidate: dict[str, 
             return "BLOCK", ["CURRENT_BLOCKER_AND_CANDIDATE_REQUIRES_REVIEW"]
         return "REVIEW", ["CANDIDATE_PREVIEW_REQUIRES_REVIEW"]
 
+    if candidate_local_gate == "BLOCK":
+        return "BLOCK", ["CANDIDATE_FULL_SCHEMA_VALIDATION_FAILED"]
+    if candidate_local_gate == "UNKNOWN":
+        return "UNKNOWN", ["CANDIDATE_LOCAL_VALIDATION_UNKNOWN"]
+    if candidate_local_gate == "REVIEW":
+        if current_gate == "BLOCK":
+            return "BLOCK", ["CURRENT_BLOCKER_AND_CANDIDATE_LOCAL_REVIEW"]
+        return "REVIEW", ["CANDIDATE_LOCAL_VALIDATION_REQUIRES_REVIEW"]
     operation = str(candidate.get("operation") or "").upper()
     if operation == "PATCH" and not listing_snapshot_evaluated:
         return "REVIEW", ["PATCH_REQUIRES_TRACEABLE_CURRENT_LISTING_SNAPSHOT"]
@@ -1161,13 +1468,17 @@ def decide_release(current_gate: str, candidate_gate: str, candidate: dict[str, 
         if any(row["status"] == SYSTEM_ERROR and row["source"] in OFFICIAL_SOURCES for row in rows):
             return "BLOCK", ["CURRENT_BLOCKER_AND_OFFICIAL_VALIDATION_INCOMPLETE"]
         if operation == "PATCH":
-            touched = {str(value) for value in candidate.get("touched_attributes") or []}
+            aliases = candidate.get("attribute_aliases") or {}
+            touched = {
+                canonical_attribute(value, aliases)
+                for value in candidate.get("touched_attributes") or []
+            }
             uncovered = {
-                str(row.get("attribute") or "<unknown>")
+                canonical_attribute(row.get("attribute") or "<unknown>", aliases)
                 for row in rows
                 if row["status"] == OFFICIAL_ERROR
                 and row["source"] in {"LISTINGS_ITEMS", "PTD"}
-                and str(row.get("attribute") or "<unknown>") not in touched
+                and canonical_attribute(row.get("attribute") or "<unknown>", aliases) not in touched
             }
             if uncovered:
                 return "REVIEW", ["PATCH_DOES_NOT_COVER_CURRENT_BLOCKERS"]
@@ -1178,7 +1489,6 @@ def decide_release(current_gate: str, candidate_gate: str, candidate: dict[str, 
         return "REVIEW", ["PATCH_DOES_NOT_ESTABLISH_FULL_LISTING_STATE"]
     if not full_schema_validated:
         return "REVIEW", ["FULL_PTD_SCHEMA_VALIDATION_REQUIRED"]
-
     return "PASS", ["BOUND_CANDIDATE_PREVIEW_VALID"]
 
 
@@ -1193,17 +1503,75 @@ def diagnose(data: Any) -> dict[str, Any]:
         )], False, False)
 
     scope = data.get("scope") or {}
-    content = data.get("content") or {}
+    legacy_content = data.get("content") or {}
+    current_content = data.get("current_content") \
+        if "current_content" in data else legacy_content
+    candidate_input = data.get("candidate")
+    candidate_content = candidate_input.get("content") \
+        if isinstance(candidate_input, dict) and "content" in candidate_input else None
     official = data.get("official") or {}
-    if not isinstance(scope, dict) or not isinstance(content, dict) or not isinstance(official, dict):
+    if not isinstance(scope, dict) or not isinstance(current_content, dict) \
+            or not isinstance(official, dict):
         return finalize({}, {}, {}, [finding(
             SYSTEM_ERROR,
             "INPUT_SECTIONS_INVALID",
-            "scope, content, and official must be JSON objects.",
+            "scope, current_content/content, and official must be JSON objects.",
             "INPUT",
         )], False, False)
 
     rows: list[dict[str, Any]] = []
+    aliases, alias_rows = normalize_attribute_aliases(data.get("attribute_aliases"))
+    rows.extend(alias_rows)
+    if isinstance(candidate_input, dict):
+        candidate_input = dict(candidate_input)
+        candidate_input["attribute_aliases"] = aliases
+    if candidate_content is not None and not isinstance(candidate_content, dict):
+        invalid_content = finding(
+            SYSTEM_ERROR,
+            "CANDIDATE_CONTENT_INVALID",
+            "candidate.content must be an object when supplied.",
+            "INPUT",
+        )
+        invalid_content["applies_to_current"] = False
+        invalid_content["applies_to_candidate"] = True
+        rows.append(invalid_content)
+        candidate_content = {}
+
+    content_contract_mode = "LEGACY_SHARED_CONTENT"
+    evaluation_content = current_content
+    validation_target = "CURRENT"
+    if isinstance(candidate_content, dict):
+        content_contract_mode = "EXPLICIT_CURRENT_AND_CANDIDATE"
+        evaluation_content = candidate_content
+        validation_target = "CANDIDATE"
+
+    ptd_input = official.get("ptd")
+    if isinstance(ptd_input, dict) and is_provided(ptd_input.get("validation_target")):
+        requested_target = str(ptd_input.get("validation_target")).upper()
+        if requested_target not in {"CURRENT", "CANDIDATE"}:
+            rows.append(finding(
+                SYSTEM_ERROR,
+                "PTD_VALIDATION_TARGET_INVALID",
+                "PTD validation_target must be CURRENT or CANDIDATE.",
+                "PTD",
+                evidence=requested_target,
+            ))
+        elif requested_target == "CANDIDATE" and not isinstance(candidate_content, dict):
+            missing_candidate = finding(
+                NOT_EVALUATED,
+                "CANDIDATE_CONTENT_MISSING",
+                "Candidate PTD validation requires an explicit candidate.content object.",
+                "PTD",
+            )
+            missing_candidate["applies_to_current"] = False
+            missing_candidate["applies_to_candidate"] = True
+            rows.append(missing_candidate)
+            validation_target = "CANDIDATE"
+            evaluation_content = {}
+        else:
+            validation_target = requested_target
+            evaluation_content = candidate_content if requested_target == "CANDIDATE" \
+                else current_content
     data_as_of = data.get("data_as_of")
     evaluation_time = parse_timestamp(data_as_of)
     if data_as_of is None:
@@ -1233,43 +1601,60 @@ def diagnose(data: Any) -> dict[str, Any]:
         ))
 
     coverage = {
-        key: "PROVIDED" if is_provided(content.get(key)) else "MISSING"
+        key: "PROVIDED" if is_provided(evaluation_content.get(key)) else "MISSING"
         for key in ("title", "item_highlight", "bullets", "description", "backend_search_terms", "images")
     }
+    if isinstance(evaluation_content.get("attributes"), dict):
+        coverage["attributes"] = "PROVIDED"
 
     snapshot_rows, listing_snapshot_evaluated, listing_snapshot = evaluate_listing_snapshot(
         scope, official, evaluation_time
     )
     rows.extend(snapshot_rows)
 
-    ptd_input = official.get("ptd")
     ptd_rows, ptd_evaluated, ptd_validation_coverage = evaluate_ptd(
-        scope, content, ptd_input, evaluation_time
+        scope, evaluation_content, ptd_input, evaluation_time, aliases,
+        validation_target, candidate_input if isinstance(candidate_input, dict) else {},
     )
+    for row in ptd_rows:
+        row.setdefault("applies_to_current", validation_target == "CURRENT")
+        row.setdefault("applies_to_candidate", validation_target == "CANDIDATE")
     rows.extend(ptd_rows)
 
     ptd_fetched_at = parse_timestamp(ptd_input.get("fetched_at")) if isinstance(ptd_input, dict) else None
     preview_rows, preview_passed, candidate = evaluate_validation_preview(
-        scope, data.get("candidate"), official.get("validation_preview"),
+        scope, candidate_input, official.get("validation_preview"),
         evaluation_time, ptd_fetched_at,
     )
     rows.extend(preview_rows)
 
-    rows.extend(evaluate_images(content))
+    image_rows = evaluate_images(evaluation_content)
+    for row in image_rows:
+        row["content_target"] = validation_target
+    rows.extend(image_rows)
     report = finalize(
         scope,
         coverage,
         candidate,
         rows,
-        listing_snapshot_evaluated or ptd_evaluated,
+        listing_snapshot_evaluated or (ptd_evaluated and validation_target == "CURRENT"),
         preview_passed,
         listing_snapshot_evaluated,
-        ptd_evaluated,
+        ptd_evaluated and validation_target == "CURRENT",
         bool(ptd_validation_coverage.get("full_schema_validation")),
+        ptd_evaluated and validation_target == "CANDIDATE",
     )
     report["data_as_of"] = data_as_of
     report["listing_snapshot"] = listing_snapshot
     report["ptd_validation_coverage"] = ptd_validation_coverage
+    report["report_locale"] = str(data.get("report_locale") or "en")
+    report["content_contract"] = {
+        "mode": content_contract_mode,
+        "evaluated_target": validation_target,
+        "current_content_present": bool(current_content),
+        "candidate_content_present": isinstance(candidate_content, dict),
+        "attribute_alias_count": len(aliases),
+    }
     preview = official.get("validation_preview")
     report["validation_preview"] = {
         key: preview.get(key)
@@ -1288,22 +1673,33 @@ def finalize(scope: dict[str, Any], coverage: dict[str, Any], candidate: dict[st
              rows: list[dict[str, Any]], current_evaluated: bool,
              preview_passed: bool, listing_snapshot_evaluated: bool = False,
              ptd_evaluated: bool = False,
-             full_schema_validated: bool = False) -> dict[str, Any]:
+             full_schema_validated: bool = False,
+             candidate_local_evaluated: bool = False) -> dict[str, Any]:
     counts = Counter(row["status"] for row in rows)
     current_gate = calculate_gate(
         rows,
         {"INPUT", "LISTINGS_ITEMS", "PTD"},
         current_evaluated,
         pass_value="NO_KNOWN_OFFICIAL_ISSUES",
+        applicability_field="applies_to_current",
     )
     candidate_gate = calculate_gate(
         rows,
         {"INPUT", "VALIDATION_PREVIEW"},
         preview_passed,
         pass_value="PASS",
+        applicability_field="applies_to_candidate",
+    )
+    candidate_local_gate = calculate_gate(
+        rows,
+        {"PTD"},
+        candidate_local_evaluated or full_schema_validated,
+        pass_value="PASS",
+        applicability_field="applies_to_candidate",
     )
     release_decision, release_reasons = decide_release(
-        current_gate, candidate_gate, candidate, rows, listing_snapshot_evaluated,
+        current_gate, candidate_gate, candidate_local_gate, candidate, rows,
+        listing_snapshot_evaluated,
         full_schema_validated,
     )
     official_incomplete = any(
@@ -1319,6 +1715,7 @@ def finalize(scope: dict[str, Any], coverage: dict[str, Any], candidate: dict[st
         "candidate": candidate,
         "current_listing_gate": current_gate,
         "candidate_preview_gate": candidate_gate,
+        "candidate_local_validation_gate": candidate_local_gate,
         "release_decision": release_decision,
         "release_reasons": release_reasons,
         # Compatibility field retained for 1.0.x consumers.

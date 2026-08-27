@@ -117,6 +117,25 @@ class DiagnoseListingTest(unittest.TestCase):
         data["official"]["validation_preview"]["status"] = status
         data["official"]["validation_preview"]["issues"] = issues or []
 
+    def enable_full_schema_validation(self, data):
+        data["current_content"] = data.pop("content")
+        data["candidate"]["content"] = {"title": "Valid title"}
+        ptd = data["official"]["ptd"]
+        ptd["validation_target"] = "CANDIDATE"
+        ptd["full_schema_validation"] = {
+            "complete": True,
+            "valid": True,
+            "validator": "external-validator",
+            "validator_version": "1.0.0",
+            "schema_draft": "2019-09",
+            "amazon_vocabulary": True,
+            "schema_checksum": ptd["schema_checksum"],
+            "meta_schema_checksum": ptd["meta_schema_checksum"],
+            "payload_sha256": data["candidate"]["payload_sha256"],
+            "validated_at": "2026-01-01T00:00:02.500000Z",
+            "errors": [],
+        }
+
     def test_official_error_blocks(self):
         data = self.base()
         self.set_preview_status(data, "INVALID", [
@@ -267,6 +286,23 @@ class DiagnoseListingTest(unittest.TestCase):
         self.assertEqual("REVIEW", report["release_decision"])
         self.assertIn("PATCH_DOES_NOT_COVER_CURRENT_BLOCKERS", report["release_reasons"])
         self.assertNotEqual("PASS_OFFICIAL_CHECKS", report["gate"])
+
+    def test_patch_alias_can_cover_current_issue_attribute(self):
+        data = self.base()
+        data["candidate"]["operation"] = "PATCH"
+        data["candidate"]["touched_attributes"] = ["item_highlight"]
+        data["attribute_aliases"] = {"item_highlight": "title_differentiation"}
+        data["official"]["validation_preview"]["operation"] = "PATCH"
+        data["official"]["validation_preview"].pop("requirements")
+        data["official"]["listing_snapshot"]["issues"] = [{
+            "code": "OLD_ATTRIBUTE_ERROR",
+            "severity": "ERROR",
+            "attributeNames": ["title_differentiation"],
+        }]
+        self.refresh_preview_binding(data)
+        report = MODULE.diagnose(data)
+        self.assertNotIn("PATCH_DOES_NOT_COVER_CURRENT_BLOCKERS", report["release_reasons"])
+        self.assertEqual("CURRENT_LISTING_HAS_HISTORICAL_BLOCKERS", report["release_reasons"][0])
 
     def test_known_error_beats_system_error_and_marks_incomplete(self):
         data = self.base()
@@ -491,6 +527,119 @@ class DiagnoseListingTest(unittest.TestCase):
         report = MODULE.diagnose(self.base())
         self.assertEqual("LIGHTWEIGHT_SUBSET", report["ptd_validation_coverage"]["mode"])
         self.assertFalse(report["ptd_validation_coverage"]["full_schema_validation"])
+
+    def test_attribute_aliases_evaluate_every_matching_amazon_element(self):
+        data = self.base()
+        data["attribute_aliases"] = {"item_highlight": "title_differentiation"}
+        data["content"]["attributes"] = {
+            "item_highlight": [
+                {"value": "Short", "language_tag": "en_US", "marketplace_id": "MARKETPLACE_ID"},
+                {"value": "Too long", "language_tag": "en_US", "marketplace_id": "MARKETPLACE_ID"},
+                {"value": "Ignored for locale", "language_tag": "de_DE", "marketplace_id": "MARKETPLACE_ID"},
+            ]
+        }
+        data["official"]["ptd"]["constraints"] = {
+            "title_differentiation": [
+                {"type": "MAX_LENGTH", "value": 5, "unit": "CODE_POINTS"}
+            ]
+        }
+        report = MODULE.diagnose(data)
+        violations = [
+            row for row in report["findings"] if row["code"] == "PTD_CONSTRAINT_VIOLATION"
+        ]
+        self.assertEqual(1, len(violations))
+        self.assertEqual(1, violations[0]["evidence"]["element_index"])
+        self.assertEqual("item_highlight", violations[0]["evidence"]["resolved_attribute"])
+
+    def test_attribute_alias_cycle_is_a_system_error(self):
+        data = self.base()
+        data["attribute_aliases"] = {"first": "second", "second": "first"}
+        report = MODULE.diagnose(data)
+        self.assertIn("ATTRIBUTE_ALIAS_CYCLE", {row["code"] for row in report["findings"]})
+        self.assertGreater(report["counts"][MODULE.SYSTEM_ERROR], 0)
+
+    def test_declared_alias_overrides_legacy_convenience_mapping(self):
+        data = self.base()
+        data["attribute_aliases"] = {"title": "custom_title_attribute"}
+        data["content"]["title"] = "Too long"
+        data["official"]["ptd"]["constraints"] = {
+            "custom_title_attribute": [
+                {"type": "MAX_LENGTH", "value": 3, "unit": "CODE_POINTS"}
+            ]
+        }
+        report = MODULE.diagnose(data)
+        violation = next(
+            row for row in report["findings"] if row["code"] == "PTD_CONSTRAINT_VIOLATION"
+        )
+        self.assertEqual("title", violation["evidence"]["resolved_attribute"])
+
+    def test_candidate_content_is_not_mixed_into_current_listing_gate(self):
+        data = self.base()
+        data["current_content"] = data.pop("content")
+        data["candidate"]["content"] = {"title": "Candidate title is too long"}
+        data["official"]["ptd"]["validation_target"] = "CANDIDATE"
+        data["official"]["ptd"]["constraints"]["item_name"][0]["value"] = 5
+        report = MODULE.diagnose(data)
+        self.assertEqual("NO_KNOWN_OFFICIAL_ISSUES", report["current_listing_gate"])
+        self.assertEqual("BLOCK", report["candidate_local_validation_gate"])
+        self.assertEqual("BLOCK", report["release_decision"])
+        self.assertEqual("EXPLICIT_CURRENT_AND_CANDIDATE", report["content_contract"]["mode"])
+
+    def test_bound_full_schema_validation_can_enable_release_pass(self):
+        data = self.base()
+        self.enable_full_schema_validation(data)
+        report = MODULE.diagnose(data)
+        self.assertEqual("PASS", report["candidate_preview_gate"])
+        self.assertEqual("PASS", report["candidate_local_validation_gate"])
+        self.assertTrue(report["ptd_validation_coverage"]["full_schema_validation"])
+        self.assertEqual("PASS", report["release_decision"])
+
+    def test_not_enforced_ptd_cannot_enable_unattended_release(self):
+        data = self.base()
+        self.enable_full_schema_validation(data)
+        data["official"]["ptd"]["scope"]["requirements_enforced"] = "NOT_ENFORCED"
+        report = MODULE.diagnose(data)
+        self.assertEqual("REVIEW", report["candidate_local_validation_gate"])
+        self.assertEqual("REVIEW", report["release_decision"])
+        self.assertIn("PTD_REQUIREMENTS_NOT_ENFORCED", {
+            row["code"] for row in report["findings"]
+        })
+
+    def test_missing_candidate_content_does_not_pollute_current_gate(self):
+        data = self.base()
+        data["official"]["ptd"]["validation_target"] = "CANDIDATE"
+        report = MODULE.diagnose(data)
+        self.assertEqual("NO_KNOWN_OFFICIAL_ISSUES", report["current_listing_gate"])
+        self.assertEqual("NOT_EVALUATED", report["candidate_local_validation_gate"])
+
+    def test_invalid_candidate_content_does_not_pollute_current_gate(self):
+        data = self.base()
+        data["candidate"]["content"] = "invalid"
+        report = MODULE.diagnose(data)
+        self.assertEqual("NO_KNOWN_OFFICIAL_ISSUES", report["current_listing_gate"])
+        self.assertEqual("UNKNOWN", report["candidate_preview_gate"])
+
+    def test_boolean_full_schema_assertion_is_not_trusted(self):
+        data = self.base()
+        data["current_content"] = data.pop("content")
+        data["candidate"]["content"] = {"title": "Valid title"}
+        data["official"]["ptd"]["validation_target"] = "CANDIDATE"
+        data["official"]["ptd"]["full_schema_validation"] = True
+        report = MODULE.diagnose(data)
+        self.assertIn("FULL_SCHEMA_VALIDATION_INVALID", {
+            row["code"] for row in report["findings"]
+        })
+        self.assertEqual("UNKNOWN", report["candidate_local_validation_gate"])
+        self.assertNotEqual("PASS", report["release_decision"])
+
+    def test_report_locale_is_independent_from_listing_locale(self):
+        data = self.base()
+        data["scope"]["locale"] = "de_DE"
+        data["official"]["ptd"]["scope"]["locale"] = "de_DE"
+        data["report_locale"] = "zh-CN"
+        report = MODULE.diagnose(data)
+        self.assertEqual("de_DE", report["scope"]["locale"])
+        self.assertEqual("zh-CN", report["report_locale"])
 
 
 if __name__ == "__main__":

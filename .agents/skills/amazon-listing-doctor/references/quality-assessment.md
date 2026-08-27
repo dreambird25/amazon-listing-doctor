@@ -27,7 +27,9 @@ Supply all seven dimensions. An evaluated dimension requires a concise rationale
 
 ```json
 {
-  "assessment_version": "1.0",
+  "assessment_version": "1.1",
+  "assessment_model": "MODEL_IDENTIFIER",
+  "prompt_version": "quality-v1.3",
   "assessed_at": "2026-01-01T00:00:00Z",
   "dimensions": {
     "content_completeness": {
@@ -65,8 +67,10 @@ The abbreviated example above shows field shape; the actual object must contain 
 - `PARTIALLY_EVALUATED` when one to six dimensions are evaluated and none is `WEAK`.
 - `NOT_EVALUATED` when no dimension is evaluated.
 
-The script also emits `quality_evidence_completeness` as `COMPLETE`, `PARTIAL`, or `NONE`, and always emits `performance_verdict=NOT_EVALUATED`.
+The script also emits `quality_evidence_completeness` as `COMPLETE`, `PARTIAL`, or `NONE`, preserves the four trace fields under `quality_assessment_trace`, and always emits `performance_verdict=NOT_EVALUATED`. `assessed_at` must be a timezone-aware ISO-8601 timestamp. Record the actual model identifier and prompt contract version so a changed evaluator can be detected in Golden Dataset regression.
 
 ## Evidence discipline
 
 Quote only supplied Listing content or metadata. General product knowledge, competitor pages, reviews, and assumed buyer preferences are not evidence unless the user explicitly supplies them and the report labels their source. Keep recommendations tied to a rated dimension and include a checkable completion criterion.
+
+For multilingual content, apply [the localization calibration guide](localization-calibration.md). Do not downgrade correct marketplace language merely because its sentence structure, word length, punctuation, or units differ from English.
