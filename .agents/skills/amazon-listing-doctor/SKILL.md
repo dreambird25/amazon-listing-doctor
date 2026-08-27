@@ -4,7 +4,7 @@ description: "Diagnose Amazon seller Listings from JSON, Excel/CSV exports, or p
 license: MIT
 metadata:
   category: ecommerce/amazon
-  version: 1.4.0
+  version: 1.4.1
   upstream: buluslan/amazon-listing-doctor
 ---
 
@@ -52,8 +52,8 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
    python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed
    ```
 
-   Detailed Markdown and JSON must revalidate the embedded assessment before exposing quality fields. They include the concise conclusion, official findings, all seven quality dimensions, Evidence Policy result, recommendations, limitations, fact bindings, and assessment trace. Write rationales and recommendations in `report_locale`. An exact suggested value is optional and can contain only deterministically rendered, manifest-bound scalar values plus punctuation and spaces; units and every other product fact require their own binding. It remains advisory and must be rechecked against PTD and a bound candidate Preview. `PASS` means the current evidence conditions are met; never label it “published successfully.”
-6. For private practice, use `scripts/evaluate_batch.py` with an explicit intent. `--mode observation` collects aggregate distributions without expected labels. `--mode golden-official` requires at least one expected official gate per sample. `--mode golden-quality` requires at least one expected concise-quality outcome per sample. Use a private `LISTING_DOCTOR_SAMPLE_REF_KEY` when stable cross-run sample references are needed; otherwise output uses non-identifying row indexes. Never add raw private Listing records to this repository; commit only synthetic fixtures and non-identifying aggregate conclusions. Read [the private practice guide](references/private-golden-dataset.md) before sampling production-like data.
+   Detailed Markdown and JSON must revalidate the embedded assessment before exposing quality fields, including when Detailed JSON is rendered again. They include the concise conclusion, official findings, all seven quality dimensions, Evidence Policy result, recommendations, limitations, fact bindings, and assessment trace. Write rationales and recommendations in `report_locale`. Recommendation priority must match the target rating: WEAK allows HIGH/MEDIUM, ADEQUATE allows MEDIUM/LOW, STRONG allows only LOW, and NOT_EVALUATED allows only `recommendation_type=EVIDENCE_REQUEST`. An exact suggested value is optional and can contain each manifest-bound scalar fact exactly once; literal separators are limited to spaces, comma, hyphens/dashes, slash, colon, and parentheses. Units and every other product fact require their own binding. It remains advisory and must be rechecked against PTD and a bound candidate Preview. `PASS` means the current evidence conditions are met; never label it “published successfully.”
+6. For private practice, use `scripts/evaluate_batch.py` with an explicit intent. `--mode observation` collects aggregate distributions without expected labels. `--mode golden-official` requires at least one expected official gate per sample. `--mode golden-quality` requires at least one expected concise-quality outcome per sample. Use a private `LISTING_DOCTOR_SAMPLE_REF_KEY` of at least 32 UTF-8 bytes when stable cross-run sample references are needed; sample references and suggestion digests use separate HMAC domains. Otherwise output uses non-identifying row indexes. Never add raw private Listing records to this repository; commit only synthetic fixtures and non-identifying aggregate conclusions. Read [the private practice guide](references/private-golden-dataset.md) before sampling production-like data.
 
 ## Evidence interpretation
 

@@ -290,6 +290,20 @@ class RenderReportTest(unittest.TestCase):
         self.assertNotIn("semantic_assessment", detailed)
         self.assertEqual("NOT_EVALUATED", detailed["quality_verdict"])
 
+    def test_detailed_json_can_be_revalidated_after_display_fields_are_added(self):
+        report = self.report()
+        expected_hash = report["official_report_sha256"]
+        first = MODULE.validated_detailed_report(report, "zh-CN")
+        self.assertEqual("VALIDATED", first["quality_render_status"])
+        first["report_locale"] = "zh-CN"
+        second = MODULE.validated_detailed_report(first, "en")
+        self.assertEqual("VALIDATED", second["quality_render_status"])
+        self.assertEqual(expected_hash, second["official_report_sha256"])
+        self.assertEqual(
+            first["executive_summary"]["quality_score"],
+            second["executive_summary"]["quality_score"],
+        )
+
     def test_official_blocker_is_the_primary_concise_action(self):
         report = self.report()
         report["release_decision"] = "BLOCK"

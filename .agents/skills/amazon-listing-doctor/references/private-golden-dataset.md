@@ -44,11 +44,11 @@ python scripts/evaluate_batch.py \
 The command emits aggregate gate distributions, expectation mismatch counts, and deterministic-rerun status. Without a private key, sample references are non-identifying row indexes such as `sample-000001`; they cannot be joined across reordered datasets. If stable cross-run references are required, set a secret that never enters the repository or logs:
 
 ```bash
-export LISTING_DOCTOR_SAMPLE_REF_KEY='private-random-secret'
+export LISTING_DOCTOR_SAMPLE_REF_KEY='replace-with-at-least-32-random-bytes'
 python scripts/evaluate_batch.py --file /private/path/listing-golden.jsonl --mode golden-official
 ```
 
-The tool then uses truncated HMAC-SHA-256 references. It never emits a raw identifier or a reversible/guessable unsalted identifier hash.
+The key must contain at least 32 UTF-8 bytes. The tool uses separate versioned HMAC domains for truncated sample references and full suggestion digests, so the same value cannot be correlated across those purposes. It never emits a raw identifier or a reversible/guessable unsalted identifier hash.
 
 ## Quality-summary regression
 

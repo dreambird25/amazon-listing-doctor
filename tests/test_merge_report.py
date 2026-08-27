@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -296,7 +297,7 @@ class MergeReportTest(unittest.TestCase):
     def test_suggested_rewrite_requires_typed_template_bindings(self):
         assessment = self.assessment("ADEQUATE")
         assessment["recommendations"] = [{
-            "priority": "HIGH",
+            "priority": "MEDIUM",
             "dimension": "clarity_and_readability",
             "attribute": "item_name",
             "current_problem": "The title omits a verified capacity.",
@@ -354,7 +355,7 @@ class MergeReportTest(unittest.TestCase):
     def test_suggested_rewrite_rejects_unverified_source_value(self):
         assessment = self.assessment("ADEQUATE")
         assessment["recommendations"] = [{
-            "priority": "HIGH",
+            "priority": "MEDIUM",
             "dimension": "clarity_and_readability",
             "attribute": "item_name",
             "current_problem": "The title omits a verified capacity.",
@@ -378,7 +379,7 @@ class MergeReportTest(unittest.TestCase):
     def test_suggested_template_rejects_unbound_literal_claims(self):
         assessment = self.assessment("ADEQUATE")
         assessment["recommendations"] = [{
-            "priority": "HIGH",
+            "priority": "MEDIUM",
             "dimension": "clarity_and_readability",
             "attribute": "item_name",
             "current_problem": "The title needs a verified capacity.",
@@ -402,12 +403,12 @@ class MergeReportTest(unittest.TestCase):
         })
         merged, valid = MODULE.merge_report(self.official_report(), assessment)
         self.assertFalse(valid)
-        self.assertTrue(any("punctuation-only literals" in error for error in merged["errors"]))
+        self.assertTrue(any("allowlisted separator literals" in error for error in merged["errors"]))
 
     def test_suggested_template_rejects_free_rendered_fact(self):
         assessment = self.assessment("ADEQUATE")
         assessment["recommendations"] = [{
-            "priority": "HIGH",
+            "priority": "MEDIUM",
             "dimension": "clarity_and_readability",
             "attribute": "item_name",
             "current_problem": "The title needs a verified capacity.",
@@ -442,7 +443,7 @@ class MergeReportTest(unittest.TestCase):
             "missing_evidence": ["localized title"],
         }
         assessment["recommendations"] = [{
-            "priority": "HIGH",
+            "priority": "MEDIUM",
             "dimension": "clarity_and_readability",
             "attribute": "item_name",
             "current_problem": "The title was not supplied.",
@@ -476,7 +477,7 @@ class MergeReportTest(unittest.TestCase):
             "missing_evidence": ["localized review"],
         }
         assessment["recommendations"] = [{
-            "priority": "HIGH",
+            "priority": "MEDIUM",
             "dimension": "clarity_and_readability",
             "attribute": "item_name",
             "current_problem": "The title needs a verified capacity.",
@@ -564,6 +565,44 @@ class MergeReportTest(unittest.TestCase):
         self.assertFalse(valid)
         self.assertTrue(any("field does not match" in error for error in merged["errors"]))
 
+    def test_official_hash_ignores_display_fields_but_detects_canonical_changes(self):
+        report = self.official_report()
+        report["findings"] = [{
+            "status": "OFFICIAL_WARNING",
+            "code": "SYNTHETIC_WARNING",
+            "message": "Synthetic canonical message.",
+            "source": "PTD",
+            "applies_to_candidate": True,
+        }]
+        report["official_scope"] = {"operation": "PATCH", "coverage": "PARTIAL"}
+        report["listing_snapshot"] = {"request_id": "SYNTHETIC_REQUEST"}
+        report["validation_preview"] = {"request_id": "SYNTHETIC_PREVIEW"}
+        expected = official_report_sha256(report)
+        decorated = json.loads(json.dumps(report))
+        decorated["report_locale"] = "zh-CN"
+        decorated["display"] = {"release_decision": "展示值"}
+        decorated["quality_render_status"] = "VALIDATED"
+        decorated["findings"][0].update({
+            "status_label": "官方警告",
+            "title_display": "展示标题",
+            "message_original": "Synthetic canonical message.",
+            "message_display": "展示消息",
+        })
+        self.assertEqual(expected, official_report_sha256(decorated))
+
+        decorated["findings"][0]["message"] = "Changed canonical message."
+        self.assertNotEqual(expected, official_report_sha256(decorated))
+
+        for field, key in (
+            ("official_scope", "coverage"),
+            ("listing_snapshot", "request_id"),
+            ("validation_preview", "request_id"),
+        ):
+            with self.subTest(field=field):
+                changed = json.loads(json.dumps(report))
+                changed[field][key] = "CHANGED_CANONICAL_VALUE"
+                self.assertNotEqual(expected, official_report_sha256(changed))
+
         report = self.official_report()
         report["quality_contexts"]["CURRENT"]["evidence_manifest"][0]["value_type"] = "other"
         assessment = self.assessment(report=report)
@@ -634,26 +673,135 @@ class MergeReportTest(unittest.TestCase):
         third_cohort = third["executive_summary"]["quality_score"]["comparison_cohort_sha256"]
         self.assertNotEqual(first_cohort, third_cohort)
 
-    def test_high_priority_action_beats_low_priority_matching_dimension(self):
+    def test_recommendation_priority_must_match_dimension_rating(self):
         assessment = self.assessment("ADEQUATE")
         assessment["dimensions"]["clarity_and_readability"]["rating"] = "WEAK"
-        assessment["recommendations"] = [
-            {
-                "priority": "LOW",
-                "dimension": "clarity_and_readability",
-                "action": "Low priority matching action.",
-                "completion_criterion": "Low action complete.",
-            },
-            {
-                "priority": "HIGH",
-                "dimension": "content_completeness",
-                "action": "High priority action.",
-                "completion_criterion": "High action complete.",
-            },
-        ]
+        assessment["recommendations"] = [{
+            "priority": "LOW",
+            "dimension": "clarity_and_readability",
+            "action": "Low priority action.",
+            "completion_criterion": "Low action complete.",
+        }]
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("invalid for WEAK" in error for error in merged["errors"]))
+
+        assessment["recommendations"][0]["priority"] = "HIGH"
         merged, valid = MODULE.merge_report(self.official_report(), assessment)
         self.assertTrue(valid)
-        self.assertEqual("High priority action.", merged["executive_summary"]["primary_action"]["action"])
+        self.assertEqual("Low priority action.", merged["executive_summary"]["primary_action"]["action"])
+
+    def test_strong_dimension_allows_only_low_priority_recommendation(self):
+        assessment = self.assessment("STRONG")
+        assessment["recommendations"] = [{
+            "priority": "MEDIUM",
+            "dimension": "clarity_and_readability",
+            "action": "Optional polish.",
+            "completion_criterion": "The optional review is complete.",
+        }]
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("invalid for STRONG" in error for error in merged["errors"]))
+
+    def test_not_evaluated_recommendation_must_request_evidence(self):
+        assessment = self.assessment("ADEQUATE")
+        assessment["dimensions"]["localization_quality"] = {
+            "rating": "NOT_EVALUATED",
+            "rationale": "",
+            "evidence": [],
+            "missing_evidence": ["localized review"],
+        }
+        assessment["recommendations"] = [{
+            "priority": "HIGH",
+            "dimension": "localization_quality",
+            "action": "Provide a locale-qualified review.",
+            "completion_criterion": "A qualified reviewer supplies the missing evidence.",
+        }]
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("must be an EVIDENCE_REQUEST" in error for error in merged["errors"]))
+
+        assessment["recommendations"][0]["recommendation_type"] = "EVIDENCE_REQUEST"
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertTrue(valid)
+
+    def test_not_evaluated_has_no_evidence_and_strong_has_no_missing_evidence(self):
+        assessment = self.assessment("ADEQUATE")
+        assessment["dimensions"]["localization_quality"] = {
+            "rating": "NOT_EVALUATED",
+            "rationale": "",
+            "evidence": [{
+                "field_path": "$.current_content.title",
+                "quote_or_value": "Example Brand Bottle",
+                "value_sha256": sha256_json("Example Brand Bottle"),
+            }],
+            "missing_evidence": ["localized review"],
+        }
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("evidence must be empty when NOT_EVALUATED" in error for error in merged["errors"]))
+
+        assessment = self.assessment("STRONG")
+        assessment["dimensions"]["clarity_and_readability"]["missing_evidence"] = ["more evidence"]
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("missing_evidence must be empty when STRONG" in error for error in merged["errors"]))
+
+    def test_suggested_template_rejects_unsafe_literals_and_reused_bindings(self):
+        assessment = self.assessment("WEAK")
+        recommendation = {
+            "priority": "HIGH",
+            "dimension": "clarity_and_readability",
+            "attribute": "item_name",
+            "current_problem": "The title needs review.",
+            "action": "Build a title from bound facts.",
+            "fact_bindings": [{
+                "binding_id": "title",
+                "source_path": "$.current_content.title",
+                "source_value": "Example Brand Bottle",
+                "source_value_sha256": sha256_json("Example Brand Bottle"),
+            }],
+            "completion_criterion": "The candidate passes PTD and Preview.",
+        }
+        assessment["recommendations"] = [recommendation]
+        for literal in ("\n", "\t", "™", "®", "✓", "🔥", "%", "---", "- - -"):
+            with self.subTest(literal=literal):
+                recommendation["suggested_template"] = [
+                    {"type": "BOUND_FACT", "binding_id": "title"},
+                    {"type": "LITERAL", "value": literal},
+                ]
+                merged, valid = MODULE.merge_report(self.official_report(), assessment)
+                self.assertFalse(valid)
+                self.assertTrue(any("allowlisted separator literals" in error for error in merged["errors"]))
+
+        self.assertTrue(MODULE.safe_template_literal("--"))
+
+        recommendation["suggested_template"] = [
+            {"type": "BOUND_FACT", "binding_id": "title"},
+            {"type": "LITERAL", "value": " - "},
+            {"type": "BOUND_FACT", "binding_id": "title"},
+        ]
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("exactly once" in error for error in merged["errors"]))
+
+        recommendation["fact_bindings"] = [
+            recommendation["fact_bindings"][0],
+            {
+                "binding_id": "same_title_under_another_id",
+                "source_path": "$.current_content.title",
+                "source_value": "Example Brand Bottle",
+                "source_value_sha256": sha256_json("Example Brand Bottle"),
+            },
+        ]
+        recommendation["suggested_template"] = [
+            {"type": "BOUND_FACT", "binding_id": "title"},
+            {"type": "LITERAL", "value": " - "},
+            {"type": "BOUND_FACT", "binding_id": "same_title_under_another_id"},
+        ]
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("unique typed facts" in error for error in merged["errors"]))
 
     def test_review_prefers_current_official_error_and_preserves_source(self):
         report = self.official_report()

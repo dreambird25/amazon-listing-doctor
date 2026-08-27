@@ -4,7 +4,7 @@ A repo-discoverable Codex Skill for evidence-first Amazon Listing diagnostics. I
 
 This public fork of [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) contains no company-specific code, endpoints, schemas, account identifiers, SKUs, ASINs, credentials, or runtime configuration.
 
-Current version: **v1.4.0**. This release adds per-dimension minimum Evidence Policy, deterministic exact-suggestion templates made only from bound scalar values, comparison cohorts, strict Golden Dataset modes, and revalidated Detailed JSON. See [`CHANGELOG.md`](CHANGELOG.md).
+Current version: **v1.4.1**. This release hardens exact-suggestion separators, rating-aware recommendation priorities, repeatable Detailed JSON validation, and private HMAC use while preserving the v1.4.0 Evidence Policy and score semantics. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Three independent conclusions
 
@@ -55,11 +55,11 @@ The public version does not authenticate to Seller Central or call SP-API. A use
 
 ## Production status
 
-v1.4.0 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass. Quality assessments also bind locale and time and must satisfy dimension-specific evidence paths.
+v1.4.1 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass. Quality assessments also bind locale and time and must satisfy dimension-specific evidence paths.
 
 Unattended automatic release still requires a full Draft 2019-09 validator with Amazon vocabulary support, independent Preview rate limiting, an authorized submission workflow, and post-submission issue/status reconciliation in the integrating system. See the [official-source production research](docs/production-readiness-research.md) and [production integration guide](.agents/skills/amazon-listing-doctor/references/production-readiness.md).
 
-A fixed-seed, read-only practice run covered 30 private Listings across multiple North American/European marketplaces and Product Types. All reruns were deterministic and produced no engine system errors; the run also confirmed that issue views can disagree and that missing traceable snapshots, PTD, or Preview evidence must fail closed. No record, identifier, or raw response from those 30 Listings is stored in this public repository.
+A fixed-seed, read-only run of 30 private Listings across North American/European marketplaces and Product Types validated the official-gate behavior: reruns were deterministic and produced no engine system errors. It did not calibrate the v1.4 quality Evidence Policy, image ratings, comparison cohorts, or exact rewrites. Those quality behaviors currently rely mainly on synthetic tests while a human-reviewed Quality Golden Set is built. No private record, identifier, per-item reference, or raw response is stored here.
 
 ## Developer CLI
 
@@ -83,11 +83,11 @@ python scripts/evaluate_batch.py --file private-golden-dataset.jsonl --mode gold
 python scripts/evaluate_batch.py --file private-quality-golden.jsonl --mode golden-quality
 ```
 
-The first command uses the concise default view; `--view detailed` renders the complete audit report and revalidates embedded quality fields for both Markdown and JSON. `scope.locale` controls Listing validation; `report_locale`/`--lang` controls display only. Candidate Preview `PASS` means “candidate preview passed,” never “published successfully.” Observation mode needs no labels; Golden modes fail when expected outcomes are absent. Batch output uses non-identifying row indexes unless a private HMAC key is supplied.
+The first command uses the concise default view; `--view detailed` renders the complete audit report and revalidates embedded quality fields for both Markdown and JSON, including a previously rendered Detailed JSON document. `scope.locale` controls Listing validation; `report_locale`/`--lang` controls display only. Candidate Preview `PASS` means “candidate preview passed,” never “published successfully.” Observation mode needs no labels; Golden modes fail when expected outcomes are absent. Batch output uses non-identifying row indexes unless a private HMAC key of at least 32 UTF-8 bytes is supplied; sample references and suggestion digests use separate HMAC domains.
 
 The quality branch follows [`quality-assessment.md`](.agents/skills/amazon-listing-doctor/references/quality-assessment.md) and is validated and merged by `scripts/merge_report.py` inside the Skill. Official input/output is defined in [`report-contract.md`](.agents/skills/amazon-listing-doctor/references/report-contract.md).
 
-The evaluated-dimension average maps `STRONG=10`, `ADEQUATE=7`, and `WEAK=3` and rounds to one decimal place. Seven evaluated dimensions return `FULL/structurally_comparable=true`; five or six return `PARTIAL`; fewer than five return `NOT_SCORED`. Two scores may be compared only when both are `FULL` and have the same `comparison_cohort_sha256`. Weak dimensions remain explicit even when the average is high. It is an internal heuristic—not an Amazon score or performance prediction. Assessments bind the selected content context, locale, time, and official report hash and must satisfy the per-dimension Evidence Policy. The concise action is localized from a stable dimension code rather than free model prose. Exact suggestions can contain only deterministically rendered bound scalar values plus punctuation/space, and still require the applicable PTD and candidate Preview.
+The evaluated-dimension average maps `STRONG=10`, `ADEQUATE=7`, and `WEAK=3` and rounds to one decimal place. Seven evaluated dimensions return `FULL/structurally_comparable=true`; five or six return `PARTIAL`; fewer than five return `NOT_SCORED`. Two scores may be compared only when both are `FULL` and have the same `comparison_cohort_sha256`. Weak dimensions remain explicit even when the average is high. Recommendation priorities are rating-aware: WEAK allows HIGH/MEDIUM, ADEQUATE allows MEDIUM/LOW, STRONG allows at most LOW, and NOT_EVALUATED only allows evidence requests. It is an internal heuristic—not an Amazon score or performance prediction. Assessments bind the selected content context, locale, time, and official report hash and must satisfy the per-dimension Evidence Policy. Exact suggestions use every bound scalar fact exactly once and allow only spaces, comma, hyphens/dashes, slash, colon, and parentheses as literal separators; they still require applicable PTD and candidate Preview validation.
 
 ## Safety boundaries
 

@@ -37,6 +37,14 @@ DIMENSIONS = (
 RATINGS = {"STRONG", "ADEQUATE", "WEAK", "NOT_EVALUATED"}
 PRIORITIES = {"HIGH", "MEDIUM", "LOW"}
 PRIORITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+RECOMMENDATION_TYPES = {"IMPROVEMENT", "EVIDENCE_REQUEST"}
+PRIORITIES_BY_RATING = {
+    "WEAK": {"HIGH", "MEDIUM"},
+    "ADEQUATE": {"MEDIUM", "LOW"},
+    "STRONG": {"LOW"},
+    "NOT_EVALUATED": PRIORITIES,
+}
+ALLOWED_LITERAL_CHARACTERS = frozenset(" ,-–—/:()")
 QUALITY_ACTION_CODES = {
     "content_completeness": "COMPLETE_MISSING_CONTENT_EVIDENCE",
     "clarity_and_readability": "IMPROVE_CLARITY_WITH_BOUND_FACTS",
@@ -105,29 +113,50 @@ def render_bound_value(value: Any) -> str | None:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def safe_template_literal(value: Any) -> bool:
+    if not isinstance(value, str) or not value \
+            or not all(char in ALLOWED_LITERAL_CHARACTERS for char in value):
+        return False
+    compact = value.replace(" ", "")
+    return not (len(compact) >= 3 and set(compact) == {"-"})
+
+
 def render_suggested_template(recommendation: dict[str, Any]) -> str | None:
     bindings = recommendation.get("fact_bindings")
     template = recommendation.get("suggested_template")
     if not isinstance(bindings, list) or not isinstance(template, list):
         return None
+    binding_ids = [
+        item.get("binding_id") for item in bindings
+        if isinstance(item, dict) and nonempty_text(item.get("binding_id"))
+    ]
+    if len(binding_ids) != len(bindings) or len(binding_ids) != len(set(binding_ids)):
+        return None
     rendered_by_id = {
-        item.get("binding_id"): render_bound_value(item.get("source_value"))
-        for item in bindings if isinstance(item, dict)
+        item["binding_id"]: render_bound_value(item.get("source_value"))
+        for item in bindings
     }
     parts: list[str] = []
+    referenced_ids: set[str] = set()
     for segment in template:
         if not isinstance(segment, dict):
             return None
         segment_type = segment.get("type")
         if segment_type == "BOUND_FACT":
-            value = rendered_by_id.get(segment.get("binding_id"))
+            binding_id = segment.get("binding_id")
+            if binding_id not in rendered_by_id or binding_id in referenced_ids:
+                return None
+            value = rendered_by_id[binding_id]
             if not nonempty_text(value):
                 return None
+            referenced_ids.add(binding_id)
             parts.append(value)
-        elif segment_type == "LITERAL" and isinstance(segment.get("value"), str):
+        elif segment_type == "LITERAL" and safe_template_literal(segment.get("value")):
             parts.append(segment["value"])
         else:
             return None
+    if referenced_ids != set(binding_ids):
+        return None
     result = "".join(parts)
     return result if result.strip() else None
 
@@ -264,6 +293,8 @@ def validate_assessment(
                 "quote_or_value, and value_sha256"
             )
         if rating == "NOT_EVALUATED":
+            if evidence:
+                errors.append(f"{name}.evidence must be empty when NOT_EVALUATED")
             if not any(nonempty_text(item) for item in missing_evidence):
                 errors.append(f"{name} requires missing_evidence when NOT_EVALUATED")
         else:
@@ -274,6 +305,8 @@ def validate_assessment(
                     f"{name} requires manifest-bound evidence with field_path, "
                     "quote_or_value, and value_sha256"
                 )
+            if rating == "STRONG" and missing_evidence:
+                errors.append(f"{name}.missing_evidence must be empty when STRONG")
 
     assessed_evidence = {
         (item["field_path"].strip(), item["value_sha256"].lower())
@@ -297,10 +330,33 @@ def validate_assessment(
             if not isinstance(recommendation, dict):
                 errors.append(f"{prefix} must be a JSON object")
                 continue
-            if recommendation.get("priority") not in PRIORITIES:
+            priority = recommendation.get("priority")
+            if priority not in PRIORITIES:
                 errors.append(f"{prefix}.priority must be HIGH, MEDIUM, or LOW")
-            if recommendation.get("dimension") not in DIMENSIONS:
+            dimension = recommendation.get("dimension")
+            if dimension not in DIMENSIONS:
                 errors.append(f"{prefix}.dimension is invalid")
+                dimension_row = None
+            else:
+                dimension_row = dimensions.get(dimension)
+                rating = dimension_row.get("rating") if isinstance(dimension_row, dict) else None
+                if priority in PRIORITIES and rating in PRIORITIES_BY_RATING \
+                        and priority not in PRIORITIES_BY_RATING[rating]:
+                    allowed = ", ".join(sorted(PRIORITIES_BY_RATING[rating]))
+                    errors.append(
+                        f"{prefix}.priority {priority} is invalid for {rating}; allowed: {allowed}"
+                    )
+            recommendation_type = recommendation.get("recommendation_type")
+            if recommendation_type is not None and recommendation_type not in RECOMMENDATION_TYPES:
+                errors.append(
+                    f"{prefix}.recommendation_type must be IMPROVEMENT or EVIDENCE_REQUEST"
+                )
+            if isinstance(dimension_row, dict) \
+                    and dimension_row.get("rating") == "NOT_EVALUATED" \
+                    and recommendation_type != "EVIDENCE_REQUEST":
+                errors.append(
+                    f"{prefix} targeting NOT_EVALUATED must be an EVIDENCE_REQUEST"
+                )
             for field in ("action", "completion_criterion"):
                 if not nonempty_text(recommendation.get(field)):
                     errors.append(f"{prefix}.{field} is required")
@@ -310,8 +366,6 @@ def validate_assessment(
             has_exact_suggestion = "suggested_template" in recommendation \
                 or "fact_bindings" in recommendation or "suggested_value" in recommendation
             if has_exact_suggestion:
-                dimension = recommendation.get("dimension")
-                dimension_row = dimensions.get(dimension) if dimension in DIMENSIONS else None
                 if isinstance(dimension_row, dict) and dimension_row.get("rating") == "NOT_EVALUATED":
                     errors.append(f"{prefix}.suggested_template cannot target a NOT_EVALUATED dimension")
                 if not nonempty_text(recommendation.get("attribute")):
@@ -321,6 +375,7 @@ def validate_assessment(
                 fact_bindings = recommendation.get("fact_bindings")
                 valid_fact_bindings = isinstance(fact_bindings, list) and bool(fact_bindings)
                 binding_ids: list[str] = []
+                fact_keys: list[tuple[str, str]] = []
                 if valid_fact_bindings:
                     valid_fact_bindings = all(
                         isinstance(item, dict)
@@ -339,8 +394,13 @@ def validate_assessment(
                     binding_ids = [
                         item.get("binding_id") for item in fact_bindings if isinstance(item, dict)
                     ]
+                    fact_keys = [
+                        (item.get("source_path", "").strip(), item.get("source_value_sha256", "").lower())
+                        for item in fact_bindings if isinstance(item, dict)
+                    ]
                     valid_fact_bindings = valid_fact_bindings \
-                        and len(binding_ids) == len(set(binding_ids))
+                        and len(binding_ids) == len(set(binding_ids)) \
+                        and len(fact_keys) == len(set(fact_keys))
                 if not valid_fact_bindings:
                     errors.append(
                         f"{prefix}.fact_bindings must contain unique typed facts bound to assessed evidence"
@@ -357,17 +417,19 @@ def validate_assessment(
                                 and nonempty_text(segment.get("binding_id")):
                             referenced_ids.append(segment["binding_id"])
                         elif segment.get("type") == "LITERAL" \
-                                and isinstance(segment.get("value"), str) \
-                                and not any(char.isalnum() for char in segment["value"]):
+                                and safe_template_literal(segment.get("value")):
                             continue
                         else:
                             valid_template = False
                     valid_template = valid_template \
+                        and len(referenced_ids) == len(binding_ids) \
+                        and len(referenced_ids) == len(set(referenced_ids)) \
                         and set(referenced_ids) == set(binding_ids) \
                         and render_suggested_template(recommendation) is not None
                 if not valid_template:
                     errors.append(
-                        f"{prefix}.suggested_template must use every bound fact and punctuation-only literals"
+                        f"{prefix}.suggested_template must use every bound fact exactly once and "
+                        "only allowlisted separator literals"
                     )
                 rendered = render_suggested_template(recommendation)
                 if "suggested_value" in recommendation \

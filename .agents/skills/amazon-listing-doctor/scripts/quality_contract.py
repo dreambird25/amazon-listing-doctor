@@ -19,18 +19,36 @@ SCOPE_FIELDS = (
     "parentage_level",
     "locale",
 )
-MERGE_ONLY_FIELDS = {
-    "official_report_sha256",
-    "merge_status",
-    "quality_verdict",
-    "quality_dimensions",
-    "quality_evidence_completeness",
-    "quality_evidence_policy",
-    "semantic_assessment",
-    "quality_assessment_trace",
-    "performance_verdict",
-    "executive_summary",
-}
+OFFICIAL_HASH_FIELDS = (
+    "scope",
+    "candidate",
+    "current_listing_gate",
+    "candidate_preview_gate",
+    "candidate_local_validation_gate",
+    "release_decision",
+    "release_reasons",
+    "official_validation_completeness",
+    "official_evidence_coverage",
+    "ptd_validation_coverage",
+    "official_scope",
+    "listing_snapshot",
+    "validation_preview",
+    "counts",
+    "findings",
+    "data_as_of",
+    "quality_contexts",
+)
+OFFICIAL_FINDING_HASH_FIELDS = (
+    "status",
+    "code",
+    "message",
+    "source",
+    "attribute",
+    "evidence",
+    "applies_to_current",
+    "applies_to_candidate",
+    "content_target",
+)
 
 
 def canonical_json(value: Any) -> str:
@@ -95,7 +113,18 @@ def build_quality_context(
 
 
 def official_report_material(report: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in report.items() if key not in MERGE_ONLY_FIELDS}
+    material = {key: report[key] for key in OFFICIAL_HASH_FIELDS if key in report}
+    findings = report.get("findings")
+    if isinstance(findings, list):
+        material["findings"] = [
+            {
+                key: finding[key]
+                for key in OFFICIAL_FINDING_HASH_FIELDS if key in finding
+            }
+            if isinstance(finding, dict) else finding
+            for finding in findings
+        ]
+    return material
 
 
 def official_report_sha256(report: dict[str, Any]) -> str:

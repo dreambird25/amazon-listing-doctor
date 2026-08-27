@@ -92,15 +92,17 @@ class EvaluateBatchTest(unittest.TestCase):
 
     def test_hmac_sample_reference_is_stable_and_identifier_safe(self):
         private_marker = "PRIVATE-ASIN-OR-SKU"
+        private_key = "k" * 32
         samples = [{
             "sample_id": private_marker,
             "input": {},
             "expected": {"release_decision": "NOT_EVALUATED"},
         }]
-        first, first_valid = MODULE.evaluate_samples(samples, sample_ref_key="private-key")
-        second, second_valid = MODULE.evaluate_samples(samples, sample_ref_key="private-key")
+        first, first_valid = MODULE.evaluate_samples(samples, sample_ref_key=private_key)
+        second, second_valid = MODULE.evaluate_samples(samples, sample_ref_key=private_key)
         self.assertTrue(first_valid and second_valid)
         self.assertEqual("HMAC_SHA256", first["sample_reference_method"])
+        self.assertEqual("V1", first["hmac_domain_separation"])
         self.assertEqual(first, second)
         self.assertNotIn(private_marker, str(first))
 
@@ -114,10 +116,22 @@ class EvaluateBatchTest(unittest.TestCase):
             },
         }
         without_key = MODULE.quality_snapshot(report)
-        with_key = MODULE.quality_snapshot(report, "private-key")
+        with_key = MODULE.quality_snapshot(report, private_key)
         self.assertIsNone(without_key["suggested_value_hmac_sha256"])
         self.assertEqual(64, len(with_key["suggested_value_hmac_sha256"]))
         self.assertNotIn(private_suggestion, str(with_key))
+
+        sample_digest = MODULE.private_hmac(
+            private_suggestion, private_key, MODULE.SAMPLE_REF_HMAC_DOMAIN
+        )
+        suggestion_digest = MODULE.private_hmac(
+            private_suggestion, private_key, MODULE.SUGGESTED_VALUE_HMAC_DOMAIN
+        )
+        self.assertNotEqual(sample_digest, suggestion_digest)
+
+    def test_hmac_key_must_have_at_least_32_utf8_bytes(self):
+        with self.assertRaisesRegex(ValueError, "at least 32 UTF-8 bytes"):
+            MODULE.evaluate_samples([{"input": {}}], "observation", "too-short")
 
 
 if __name__ == "__main__":

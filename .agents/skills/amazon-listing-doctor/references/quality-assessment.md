@@ -29,7 +29,7 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 {
   "assessment_version": "1.3",
   "assessment_model": "MODEL_IDENTIFIER",
-  "prompt_version": "quality-v1.4.0",
+  "prompt_version": "quality-v1.4.1",
   "assessed_at": "2026-01-01T00:00:00Z",
   "assessment_target": "CURRENT",
   "assessment_locale": "en_US",
@@ -66,7 +66,7 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 }
 ```
 
-The abbreviated example shows field shape; the actual object must contain all seven dimensions. An evaluated dimension requires a rationale and manifest-bound evidence. `NOT_EVALUATED` requires `missing_evidence`. `assessed_at` must include a timezone and cannot predate the official report's `data_as_of`.
+The abbreviated example shows field shape; the actual object must contain all seven dimensions. An evaluated dimension requires a rationale and manifest-bound evidence. `NOT_EVALUATED` requires non-empty `missing_evidence` and an empty `evidence` array. `STRONG` requires an empty `missing_evidence` array. `assessed_at` must include a timezone and cannot predate the official report's `data_as_of`.
 
 ## Dimension-specific Evidence Policy 1.0
 
@@ -104,6 +104,17 @@ The result also exposes `dimension_mask`, `weak_dimensions`, `comparison_rule`, 
 
 A high average never hides a weak dimension or changes the verdict. `quality_score` remains a compatibility alias for the same object. The rubric is `1.1`, is marked `INTERNAL_HEURISTIC` and `official=false`, and does not predict indexing, ranking, traffic, conversion, or sales.
 
+## Recommendation constraints
+
+Recommendation priority is bound to the target dimension rating:
+
+- `WEAK`: `HIGH` or `MEDIUM`;
+- `ADEQUATE`: `MEDIUM` or `LOW`;
+- `STRONG`: optional `LOW` only;
+- `NOT_EVALUATED`: only `recommendation_type=EVIDENCE_REQUEST`, with no exact rewrite.
+
+This prevents a high-priority recommendation for a strong dimension from hiding a real weak dimension. An evidence request asks for the missing input needed to assess the dimension; it does not claim how the Listing should be rewritten.
+
 ## Exact suggested values
 
 An exact suggestion additionally requires:
@@ -111,7 +122,8 @@ An exact suggestion additionally requires:
 - `attribute` and `current_problem`;
 - `fact_bindings`, each containing a unique `binding_id`, typed scalar `source_value`, exact `source_path`, and canonical `source_value_sha256` already cited by an evaluated dimension;
 - a non-empty `suggested_template` made only of `BOUND_FACT` references and `LITERAL` segments;
-- every binding must be used, and every literal must contain punctuation or whitespace only;
+- every binding must be used exactly once;
+- every literal must be non-empty and use only space, comma, ASCII hyphen, en/em dash, slash, colon, or parentheses; CommonMark thematic-break forms made from three or more ASCII hyphens (including spaced forms), controls, line breaks, tabs, emoji, trademark symbols, check marks, stars, and an unbound percent sign are rejected;
 - `completion_criterion`.
 
 The renderer converts the bound scalar value itself; free `rendered_fact` text is forbidden. Therefore a value and its unit require two bindings. An optional input `suggested_value` must exactly equal the deterministic template output; the merged report derives it again rather than trusting it.

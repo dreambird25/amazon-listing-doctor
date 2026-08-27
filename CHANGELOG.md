@@ -2,6 +2,20 @@
 
 本项目采用语义化版本。版本记录描述公共契约和行为变化，不登记任何接入方私有实现或数据。
 
+## [1.4.1] - 2026-08-27
+
+### 契约加固
+
+- 精确改写 Literal 改为显式分隔符白名单，拒绝控制字符、换行、Tab、Emoji、商标符号、百分号和 CommonMark 横线分隔线；每个唯一 Fact Binding 必须恰好使用一次。
+- Recommendation 与维度评级建立确定性约束；`NOT_EVALUATED` 只能请求补证据且不得携带 Evidence，`STRONG` 不得声明缺失证据。
+- 官方报告哈希改为顶层与 Finding 规范字段白名单，并绑定 Listing Snapshot、Preview 与官方 Scope 追溯摘要；展示语言和渲染字段不再改变验证语义，Detailed JSON 支持重复渲染后再次重验。
+- 私有批量回归的 HMAC key 至少需要 32 个 UTF-8 字节，样本引用与建议文本使用不同版本化 Domain。
+
+### 验证边界
+
+- README 明确 30 条私有 Listing 只验证了官方门禁与安全降级；v1.4 质量策略仍主要由合成行为测试验证，人工 Quality Golden Set 尚在建设。
+- 行为测试增加到 105 个，覆盖不安全 Literal、重复 Fact Binding、评级/建议冲突、未评估证据、哈希白名单、HMAC key/domain 与 Detailed JSON 幂等重验。
+
 ## [1.4.0] - 2026-08-27
 
 ### 质量证据契约

@@ -46,20 +46,26 @@ MODE_ALIASES = {
     "quality-summary": "golden-quality",
 }
 MODES = ("observation", "golden-official", "golden-quality", *MODE_ALIASES)
+MIN_HMAC_KEY_BYTES = 32
+SAMPLE_REF_HMAC_DOMAIN = b"amazon-listing-doctor/sample-reference/v1\0"
+SUGGESTED_VALUE_HMAC_DOMAIN = b"amazon-listing-doctor/suggested-value/v1\0"
 
 
-def private_hmac(value: Any, key: str) -> str:
+def private_hmac(value: Any, key: str, domain: bytes) -> str:
+    key_bytes = key.encode("utf-8")
+    if len(key_bytes) < MIN_HMAC_KEY_BYTES:
+        raise ValueError(f"private HMAC key must be at least {MIN_HMAC_KEY_BYTES} UTF-8 bytes")
     message = json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
-    return hmac.new(key.encode("utf-8"), message, hashlib.sha256).hexdigest()
+    return hmac.new(key_bytes, domain + message, hashlib.sha256).hexdigest()
 
 
 def sample_ref(value: Any, index: int, key: str | None) -> str:
     if not key:
         return f"sample-{index + 1:06d}"
     material = value if value is not None else {"row_index": index}
-    return private_hmac(material, key)[:16]
+    return private_hmac(material, key, SAMPLE_REF_HMAC_DOMAIN)[:16]
 
 
 def load_samples(path: Path) -> list[Any]:
@@ -96,7 +102,7 @@ def quality_snapshot(
         "primary_action_code": action.get("action_code"),
         "suggested_value_allowed": bool(suggested_value),
         "suggested_value_hmac_sha256": (
-            private_hmac(suggested_value, private_digest_key)
+            private_hmac(suggested_value, private_digest_key, SUGGESTED_VALUE_HMAC_DOMAIN)
             if suggested_value and private_digest_key else None
         ),
         "fact_binding_count": len(fact_bindings),
@@ -133,6 +139,8 @@ def evaluate_samples(
     normalized_mode = MODE_ALIASES.get(mode, mode)
     if normalized_mode not in {"observation", "golden-official", "golden-quality"}:
         raise ValueError(f"unsupported mode: {mode}")
+    if sample_ref_key:
+        private_hmac("key-validation", sample_ref_key, SAMPLE_REF_HMAC_DOMAIN)
     distributions = {field: Counter() for field in GATE_FIELDS}
     mismatches: list[dict[str, Any]] = []
     malformed = 0
@@ -219,6 +227,7 @@ def evaluate_samples(
         "mismatches": mismatches,
         "sample_reference_method": "HMAC_SHA256" if sample_ref_key else "NON_IDENTIFYING_INDEX",
         "private_value_digest_method": "HMAC_SHA256" if sample_ref_key else "DISABLED",
+        "hmac_domain_separation": "V1" if sample_ref_key else "DISABLED",
         "privacy": "No input content or raw sample identifiers are emitted.",
     }
     return result, bool(samples) and malformed == 0 and not mismatches and deterministic
