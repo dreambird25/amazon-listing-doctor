@@ -17,7 +17,12 @@ MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
 sys.path.insert(0, str(SCRIPT.parent))
-from quality_contract import build_quality_context, official_report_sha256, sha256_json
+from quality_contract import (
+    build_quality_context,
+    official_report_sha256,
+    scope_fingerprint,
+    sha256_json,
+)
 
 
 class MergeReportTest(unittest.TestCase):
@@ -35,34 +40,74 @@ class MergeReportTest(unittest.TestCase):
         }
         content = {
             "title": "Example Brand Bottle",
-            "attributes": {"capacity": [{"value": "24 oz"}]},
+            "bullets": ["Leak-resistant lid for daily use."],
+            "description": "A reusable bottle for commuting and workouts.",
+            "images": [{"url": "https://example.invalid/main.jpg", "is_main": True}],
+            "attributes": {"capacity": [{"value": 24, "unit": "oz"}]},
         }
-        return {
+        report = {
             "scope": scope,
             "current_listing_gate": "NO_KNOWN_OFFICIAL_ISSUES",
             "candidate_preview_gate": "PASS",
             "candidate_local_validation_gate": "PASS",
             "release_decision": "PASS",
+            "release_reasons": ["BOUND_CANDIDATE_PREVIEW_VALID"],
             "official_validation_completeness": "COMPLETE",
             "official_evidence_coverage": {},
             "ptd_validation_coverage": {},
             "counts": {},
             "findings": [],
+            "data_as_of": "2026-01-01T00:00:00Z",
             "quality_contexts": {
                 "CURRENT": build_quality_context("CURRENT", scope, content),
             },
         }
+        report["official_report_sha256"] = official_report_sha256(report)
+        return report
 
     def assessment(self, rating="STRONG", report=None):
         report = report or self.official_report()
+        report["official_report_sha256"] = official_report_sha256(report)
         context = report["quality_contexts"]["CURRENT"]
-        title_hash = sha256_json("Example Brand Bottle")
+        def evidence(path, value):
+            return {"field_path": path, "quote_or_value": value, "value_sha256": sha256_json(value)}
+
+        dimension_evidence = {
+            "content_completeness": [
+                evidence("$.current_content.title", "Example Brand Bottle"),
+                evidence("$.current_content.bullets[0]", "Leak-resistant lid for daily use."),
+            ],
+            "clarity_and_readability": [
+                evidence("$.current_content.title", "Example Brand Bottle"),
+            ],
+            "intent_coverage": [
+                evidence(
+                    "$.current_content.description",
+                    "A reusable bottle for commuting and workouts.",
+                ),
+            ],
+            "buyer_question_coverage": [
+                evidence("$.current_content.bullets[0]", "Leak-resistant lid for daily use."),
+            ],
+            "image_information_coverage": [
+                evidence("$.current_content.images[0].url", "https://example.invalid/main.jpg"),
+            ],
+            "cross_field_consistency": [
+                evidence("$.current_content.title", "Example Brand Bottle"),
+                evidence("$.current_content.attributes.capacity[0].value", 24),
+            ],
+            "localization_quality": [
+                evidence("$.current_content.title", "Example Brand Bottle"),
+            ],
+        }
         return {
-            "assessment_version": "1.2",
+            "assessment_version": "1.3",
             "assessment_model": "test-model",
-            "prompt_version": "quality-v1.3.2",
+            "prompt_version": "quality-v1.4.0",
             "assessed_at": "2026-01-01T00:00:00Z",
             "assessment_target": "CURRENT",
+            "assessment_locale": "en_US",
+            "evidence_policy_version": "1.0",
             "scope_fingerprint_sha256": context["scope_fingerprint_sha256"],
             "content_sha256": context["content_sha256"],
             "official_report_sha256": official_report_sha256(report),
@@ -71,12 +116,9 @@ class MergeReportTest(unittest.TestCase):
                 name: {
                     "rating": rating,
                     "rationale": "Direct evidence supports this rating.",
-                    "evidence": [{
-                        "field_path": "$.current_content.title",
-                        "quote_or_value": "Example Brand Bottle",
-                        "value_sha256": title_hash,
-                    }],
-                    "missing_evidence": [],
+                    "evidence": dimension_evidence[name],
+                    "missing_evidence": ["additional content module"] if rating == "WEAK"
+                    and name == "content_completeness" else [],
                 }
                 for name in MODULE.DIMENSIONS
             },
@@ -90,11 +132,17 @@ class MergeReportTest(unittest.TestCase):
         self.assertEqual("OK", merged["merge_status"])
         self.assertEqual("STRONG", merged["quality_verdict"])
         self.assertEqual("COMPLETE", merged["quality_evidence_completeness"])
+        self.assertTrue(merged["quality_evidence_policy"]["passed"])
+        self.assertEqual("1.0", merged["quality_evidence_policy"]["version"])
         self.assertEqual("NOT_EVALUATED", merged["performance_verdict"])
         self.assertEqual("PASS", merged["release_decision"])
         self.assertEqual(10.0, merged["executive_summary"]["quality_score"]["value"])
         self.assertEqual("FULL", merged["executive_summary"]["quality_score"]["status"])
-        self.assertTrue(merged["executive_summary"]["quality_score"]["comparable"])
+        self.assertFalse(merged["executive_summary"]["quality_score"]["comparable"])
+        self.assertTrue(merged["executive_summary"]["quality_score"]["structurally_comparable"])
+        self.assertEqual(64, len(
+            merged["executive_summary"]["quality_score"]["comparison_cohort_sha256"]
+        ))
         self.assertFalse(merged["executive_summary"]["quality_score"]["official"])
 
     def test_any_weak_needs_improvement(self):
@@ -133,6 +181,7 @@ class MergeReportTest(unittest.TestCase):
         score = merged["executive_summary"]["quality_score"]
         self.assertEqual("PARTIAL", score["status"])
         self.assertFalse(score["comparable"])
+        self.assertFalse(score["structurally_comparable"])
         self.assertNotIn("localization_quality", score["dimension_mask"])
 
     def test_evaluated_rating_requires_direct_evidence(self):
@@ -174,6 +223,60 @@ class MergeReportTest(unittest.TestCase):
         self.assertFalse(valid)
         self.assertTrue(any("timezone-aware" in error for error in merged["errors"]))
 
+    def test_assessment_locale_and_time_bind_to_report(self):
+        report = self.official_report()
+        assessment = self.assessment(report=report)
+        assessment["assessment_locale"] = "de_DE"
+        merged, valid = MODULE.merge_report(report, assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("assessment_locale does not match" in error for error in merged["errors"]))
+
+        report = self.official_report()
+        report["data_as_of"] = "2026-01-01T00:00:01Z"
+        assessment = self.assessment(report=report)
+        merged, valid = MODULE.merge_report(report, assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("must not predate" in error for error in merged["errors"]))
+
+        report = self.official_report()
+        report["data_as_of"] = "not-a-time"
+        assessment = self.assessment(report=report)
+        merged, valid = MODULE.merge_report(report, assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("official report data_as_of" in error for error in merged["errors"]))
+
+    def test_dimension_evidence_policy_rejects_wrong_paths(self):
+        assessment = self.assessment()
+        assessment["dimensions"]["image_information_coverage"]["evidence"] = [
+            assessment["dimensions"]["clarity_and_readability"]["evidence"][0]
+        ]
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("IMAGE_PATH_REQUIRED" in error for error in merged["errors"]))
+
+        assessment = self.assessment()
+        assessment["dimensions"]["cross_field_consistency"]["evidence"] = [
+            assessment["dimensions"]["clarity_and_readability"]["evidence"][0]
+        ]
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("TWO_CONTENT_MODULES_REQUIRED" in error for error in merged["errors"]))
+
+        report = self.official_report()
+        content = {"title": "", "bullets": ["Leak-resistant lid for daily use."]}
+        report["quality_contexts"]["CURRENT"] = build_quality_context(
+            "CURRENT", report["scope"], content
+        )
+        assessment = self.assessment(report=report)
+        assessment["dimensions"]["clarity_and_readability"]["evidence"] = [{
+            "field_path": "$.current_content.title",
+            "quote_or_value": "",
+            "value_sha256": sha256_json(""),
+        }]
+        merged, valid = MODULE.merge_report(report, assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("TEXTUAL_CONTENT_REQUIRED" in error for error in merged["errors"]))
+
     def test_fewer_than_five_dimensions_is_not_scored(self):
         assessment = self.assessment("ADEQUATE")
         for name in MODULE.DIMENSIONS[4:]:
@@ -190,7 +293,7 @@ class MergeReportTest(unittest.TestCase):
         self.assertIsNone(score["value"])
         self.assertEqual(4, score["evaluated_dimensions"])
 
-    def test_suggested_rewrite_requires_source_evidence(self):
+    def test_suggested_rewrite_requires_typed_template_bindings(self):
         assessment = self.assessment("ADEQUATE")
         assessment["recommendations"] = [{
             "priority": "HIGH",
@@ -203,33 +306,44 @@ class MergeReportTest(unittest.TestCase):
         }]
         merged, valid = MODULE.merge_report(self.official_report(), assessment)
         self.assertFalse(valid)
-        self.assertTrue(any("source_evidence" in error for error in merged["errors"]))
+        self.assertTrue(any("fact_bindings" in error for error in merged["errors"]))
 
-        assessment["recommendations"][0]["source_evidence"] = [{
-            "field_path": "$.current_content.attributes.capacity[0].value",
-            "quote_or_value": "24 oz",
-            "value_sha256": sha256_json("24 oz"),
-        }, {
-            "field_path": "$.current_content.title",
-            "quote_or_value": "Example Brand Bottle",
-            "value_sha256": sha256_json("Example Brand Bottle"),
-        }]
         assessment["dimensions"]["clarity_and_readability"]["evidence"].append({
             "field_path": "$.current_content.attributes.capacity[0].value",
-            "quote_or_value": "24 oz",
-            "value_sha256": sha256_json("24 oz"),
+            "quote_or_value": 24,
+            "value_sha256": sha256_json(24),
+        })
+        assessment["dimensions"]["clarity_and_readability"]["evidence"].append({
+            "field_path": "$.current_content.attributes.capacity[0].unit",
+            "quote_or_value": "oz",
+            "value_sha256": sha256_json("oz"),
         })
         assessment["recommendations"][0]["fact_bindings"] = [
             {
-                "fact": "Example Brand Bottle",
+                "binding_id": "product_name",
                 "source_path": "$.current_content.title",
+                "source_value": "Example Brand Bottle",
                 "source_value_sha256": sha256_json("Example Brand Bottle"),
             },
             {
-                "fact": "24 oz",
+                "binding_id": "capacity",
                 "source_path": "$.current_content.attributes.capacity[0].value",
-                "source_value_sha256": sha256_json("24 oz"),
+                "source_value": 24,
+                "source_value_sha256": sha256_json(24),
             },
+            {
+                "binding_id": "capacity_unit",
+                "source_path": "$.current_content.attributes.capacity[0].unit",
+                "source_value": "oz",
+                "source_value_sha256": sha256_json("oz"),
+            },
+        ]
+        assessment["recommendations"][0]["suggested_template"] = [
+            {"type": "BOUND_FACT", "binding_id": "product_name"},
+            {"type": "LITERAL", "value": ", "},
+            {"type": "BOUND_FACT", "binding_id": "capacity"},
+            {"type": "LITERAL", "value": " "},
+            {"type": "BOUND_FACT", "binding_id": "capacity_unit"},
         ]
         merged, valid = MODULE.merge_report(self.official_report(), assessment)
         self.assertTrue(valid)
@@ -246,21 +360,78 @@ class MergeReportTest(unittest.TestCase):
             "current_problem": "The title omits a verified capacity.",
             "action": "Rewrite the title using supplied facts.",
             "suggested_value": "Example Brand Bottle, 48 oz",
-            "source_evidence": [{
-                "field_path": "$.current_content.attributes.capacity[0].value",
-                "quote_or_value": "48 oz",
-                "value_sha256": sha256_json("48 oz"),
-            }],
             "fact_bindings": [{
-                "fact": "48 oz",
+                "binding_id": "capacity",
                 "source_path": "$.current_content.attributes.capacity[0].value",
-                "source_value_sha256": sha256_json("48 oz"),
+                "source_value": 48,
+                "source_value_sha256": sha256_json(48),
             }],
+            "suggested_template": [
+                {"type": "BOUND_FACT", "binding_id": "capacity"},
+            ],
             "completion_criterion": "The title passes PTD and Preview.",
         }]
         merged, valid = MODULE.merge_report(self.official_report(), assessment)
         self.assertFalse(valid)
-        self.assertTrue(any("must match evidence" in error for error in merged["errors"]))
+        self.assertTrue(any("bound to assessed evidence" in error for error in merged["errors"]))
+
+    def test_suggested_template_rejects_unbound_literal_claims(self):
+        assessment = self.assessment("ADEQUATE")
+        assessment["recommendations"] = [{
+            "priority": "HIGH",
+            "dimension": "clarity_and_readability",
+            "attribute": "item_name",
+            "current_problem": "The title needs a verified capacity.",
+            "action": "Build a title from verified facts.",
+            "fact_bindings": [{
+                "binding_id": "capacity",
+                "source_path": "$.current_content.attributes.capacity[0].value",
+                "source_value": 24,
+                "source_value_sha256": sha256_json(24),
+            }],
+            "suggested_template": [
+                {"type": "LITERAL", "value": "BPA-Free "},
+                {"type": "BOUND_FACT", "binding_id": "capacity"},
+            ],
+            "completion_criterion": "The title passes review.",
+        }]
+        assessment["dimensions"]["clarity_and_readability"]["evidence"].append({
+            "field_path": "$.current_content.attributes.capacity[0].value",
+            "quote_or_value": 24,
+            "value_sha256": sha256_json(24),
+        })
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("punctuation-only literals" in error for error in merged["errors"]))
+
+    def test_suggested_template_rejects_free_rendered_fact(self):
+        assessment = self.assessment("ADEQUATE")
+        assessment["recommendations"] = [{
+            "priority": "HIGH",
+            "dimension": "clarity_and_readability",
+            "attribute": "item_name",
+            "current_problem": "The title needs a verified capacity.",
+            "action": "Build a title from verified facts.",
+            "fact_bindings": [{
+                "binding_id": "capacity",
+                "source_path": "$.current_content.attributes.capacity[0].value",
+                "source_value": 24,
+                "source_value_sha256": sha256_json(24),
+                "rendered_fact": "BPA-Free",
+            }],
+            "suggested_template": [
+                {"type": "BOUND_FACT", "binding_id": "capacity"},
+            ],
+            "completion_criterion": "The title passes review.",
+        }]
+        assessment["dimensions"]["clarity_and_readability"]["evidence"].append({
+            "field_path": "$.current_content.attributes.capacity[0].value",
+            "quote_or_value": 24,
+            "value_sha256": sha256_json(24),
+        })
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("typed facts" in error for error in merged["errors"]))
 
     def test_suggested_rewrite_cannot_target_unassessed_dimension(self):
         assessment = self.assessment("ADEQUATE")
@@ -277,21 +448,53 @@ class MergeReportTest(unittest.TestCase):
             "current_problem": "The title was not supplied.",
             "action": "Rewrite the title.",
             "suggested_value": "Example Brand Bottle, 24 oz",
-            "source_evidence": [{
-                "field_path": "$.current_content.attributes.capacity[0].value",
-                "quote_or_value": "24 oz",
-                "value_sha256": sha256_json("24 oz"),
-            }],
             "fact_bindings": [{
-                "fact": "24 oz",
+                "binding_id": "capacity",
                 "source_path": "$.current_content.attributes.capacity[0].value",
-                "source_value_sha256": sha256_json("24 oz"),
+                "source_value": 24,
+                "source_value_sha256": sha256_json(24),
             }],
+            "suggested_template": [
+                {"type": "BOUND_FACT", "binding_id": "capacity"},
+            ],
             "completion_criterion": "A localized title is supplied.",
         }]
         merged, valid = MODULE.merge_report(self.official_report(), assessment)
         self.assertFalse(valid)
         self.assertTrue(any("NOT_EVALUATED" in error for error in merged["errors"]))
+
+    def test_unassessed_evidence_cannot_supply_a_fact_binding(self):
+        assessment = self.assessment("ADEQUATE")
+        assessment["dimensions"]["localization_quality"] = {
+            "rating": "NOT_EVALUATED",
+            "rationale": "",
+            "evidence": [{
+                "field_path": "$.current_content.attributes.capacity[0].unit",
+                "quote_or_value": "oz",
+                "value_sha256": sha256_json("oz"),
+            }],
+            "missing_evidence": ["localized review"],
+        }
+        assessment["recommendations"] = [{
+            "priority": "HIGH",
+            "dimension": "clarity_and_readability",
+            "attribute": "item_name",
+            "current_problem": "The title needs a verified capacity.",
+            "action": "Build a title from verified facts.",
+            "fact_bindings": [{
+                "binding_id": "capacity_unit",
+                "source_path": "$.current_content.attributes.capacity[0].unit",
+                "source_value": "oz",
+                "source_value_sha256": sha256_json("oz"),
+            }],
+            "suggested_template": [
+                {"type": "BOUND_FACT", "binding_id": "capacity_unit"},
+            ],
+            "completion_criterion": "The title passes review.",
+        }]
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("bound to assessed evidence" in error for error in merged["errors"]))
 
     def test_summary_does_not_change_official_gates(self):
         report = self.official_report()
@@ -355,11 +558,18 @@ class MergeReportTest(unittest.TestCase):
         self.assertFalse(valid)
         self.assertTrue(any("official_report_sha256 does not match" in error for error in merged["errors"]))
 
-        report["official_report_sha256"] = "0" * 64
         assessment = self.assessment(report=report)
+        report["official_report_sha256"] = "0" * 64
         merged, valid = MODULE.merge_report(report, assessment)
         self.assertFalse(valid)
         self.assertTrue(any("field does not match" in error for error in merged["errors"]))
+
+        report = self.official_report()
+        report["quality_contexts"]["CURRENT"]["evidence_manifest"][0]["value_type"] = "other"
+        assessment = self.assessment(report=report)
+        merged, valid = MODULE.merge_report(report, assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any("manifest integrity" in error for error in merged["errors"]))
 
     def test_assessment_evidence_must_match_manifest_path_and_value(self):
         report = self.official_report()
@@ -379,7 +589,8 @@ class MergeReportTest(unittest.TestCase):
         score = merged["executive_summary"]["evaluated_dimension_average"]
         self.assertEqual("FULL", score["status"])
         self.assertEqual(9.0, score["value"])
-        self.assertTrue(score["comparable"])
+        self.assertFalse(score["comparable"])
+        self.assertTrue(score["structurally_comparable"])
         self.assertEqual(["localization_quality"], score["weak_dimensions"])
         self.assertEqual("NEEDS_IMPROVEMENT", merged["quality_verdict"])
 
@@ -398,7 +609,30 @@ class MergeReportTest(unittest.TestCase):
         self.assertEqual("PARTIAL", score["status"])
         self.assertEqual(10.0, score["value"])
         self.assertFalse(score["comparable"])
+        self.assertFalse(score["structurally_comparable"])
         self.assertEqual(5, len(score["dimension_mask"]))
+
+    def test_comparison_cohort_changes_with_model_or_locale_contract(self):
+        report = self.official_report()
+        first, valid = MODULE.merge_report(report, self.assessment(report=report))
+        self.assertTrue(valid)
+        second_assessment = self.assessment(report=report)
+        second_assessment["assessment_model"] = "different-model"
+        second, valid = MODULE.merge_report(report, second_assessment)
+        self.assertTrue(valid)
+        first_cohort = first["executive_summary"]["quality_score"]["comparison_cohort_sha256"]
+        second_cohort = second["executive_summary"]["quality_score"]["comparison_cohort_sha256"]
+        self.assertNotEqual(first_cohort, second_cohort)
+
+        other_scope = self.official_report()
+        other_scope["scope"]["product_type"] = "OTHER_PRODUCT_TYPE"
+        other_scope["quality_contexts"]["CURRENT"]["scope_fingerprint_sha256"] = \
+            scope_fingerprint(other_scope["scope"])
+        other_assessment = self.assessment(report=other_scope)
+        third, valid = MODULE.merge_report(other_scope, other_assessment)
+        self.assertTrue(valid)
+        third_cohort = third["executive_summary"]["quality_score"]["comparison_cohort_sha256"]
+        self.assertNotEqual(first_cohort, third_cohort)
 
     def test_high_priority_action_beats_low_priority_matching_dimension(self):
         assessment = self.assessment("ADEQUATE")

@@ -12,7 +12,13 @@ from typing import Any
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from merge_report import build_executive_summary, derive_quality, validate_assessment
+from merge_report import (
+    build_executive_summary,
+    derive_quality,
+    render_suggested_template,
+    validate_assessment,
+)
+from quality_policy import evaluate_evidence_policy
 from summary_contract import official_action, primary_official_finding
 
 
@@ -91,6 +97,9 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
             "type": "INTERNAL_HEURISTIC",
             "official": False,
             "comparable": False,
+            "structurally_comparable": False,
+            "comparison_rule": "BOTH_FULL_AND_SAME_COMPARISON_COHORT",
+            "comparison_cohort_sha256": None,
             "evaluated_dimensions": 0,
             "total_dimensions": 7,
             "minimum_dimensions_required": 5,
@@ -113,8 +122,6 @@ def validated_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
     if report.get("merge_status") != "OK" or validate_assessment(assessment, report):
         return fallback_executive_summary(report)
     verdict, _ = derive_quality(assessment["dimensions"])
-    if report.get("quality_verdict") != verdict:
-        return fallback_executive_summary(report)
     return build_executive_summary(report, assessment, verdict)
 
 
@@ -202,8 +209,8 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
         f"- {fields['dimensions']}: {score.get('evaluated_dimensions', 0)} / "
         f"{score.get('total_dimensions', 7)}",
         f"- {fields['weak_dimensions']}: {weak_display}",
-        f"- {fields['comparable']}: "
-        f"{fields['yes'] if score.get('comparable') else fields['no']}",
+        f"- {fields['structurally_comparable']}: "
+        f"{fields['yes'] if score.get('structurally_comparable') else fields['no']}",
         f"- {fields['quality_verdict']}: {display['quality_verdict']} "
         f"(`{summary.get('quality_verdict')}`)",
         "",
@@ -245,6 +252,8 @@ def render_detailed_markdown(report: dict[str, Any], locale: str) -> str:
     assessment = report.get("semantic_assessment")
     assessment_errors = validate_assessment(assessment, report)
     if not assessment_errors:
+        policy, _ = evaluate_evidence_policy(assessment, report)
+        policy_dimensions = policy["dimensions"]
         lines.extend(["", f"## {headings['quality_dimensions']}", ""])
         for name, row in assessment["dimensions"].items():
             dimension_label = label(messages, "dimension_labels", name)
@@ -254,6 +263,12 @@ def render_detailed_markdown(report: dict[str, Any], locale: str) -> str:
             )
             if row.get("rationale"):
                 lines.append(f"  - {fields['rationale']}: {row['rationale']}")
+            policy = policy_dimensions.get(name) if isinstance(policy_dimensions, dict) else None
+            if isinstance(policy, dict):
+                lines.append(
+                    f"  - {fields['evidence_policy']}: `{policy.get('rule_code')}` "
+                    f"({'PASS' if policy.get('passed') else 'FAIL'})"
+                )
             for evidence in row.get("evidence") or []:
                 lines.append(
                     f"  - {fields['evidence']}: `{evidence.get('field_path')}` = "
@@ -270,14 +285,25 @@ def render_detailed_markdown(report: dict[str, Any], locale: str) -> str:
         if not recommendations:
             lines.append(f"- {fields['none']}")
         for recommendation in recommendations:
+            suggested_value = render_suggested_template(recommendation)
             lines.append(
                 f"- **{recommendation.get('priority')} · "
                 f"{label(messages, 'dimension_labels', recommendation.get('dimension'))}**: "
                 f"{recommendation.get('action')}"
             )
-            if recommendation.get("suggested_value"):
+            if recommendation.get("attribute"):
+                lines.append(f"  - {fields['attribute']}: `{recommendation['attribute']}`")
+            if recommendation.get("current_problem"):
+                lines.append(f"  - {fields['current_problem']}: {recommendation['current_problem']}")
+            for binding in recommendation.get("fact_bindings") or []:
                 lines.append(
-                    f"  - {fields['suggested_value']}: {recommendation['suggested_value']}"
+                    f"  - {fields['bound_fact']}: `{binding.get('binding_id')}` = "
+                    f"{binding.get('source_value')} ← `{binding.get('source_path')}` "
+                    f"(`{binding.get('source_value_sha256')}`)"
+                )
+            if suggested_value:
+                lines.append(
+                    f"  - {fields['suggested_value']}: {suggested_value}"
                 )
             lines.append(
                 f"  - {fields['completion_criterion']}: "
@@ -291,7 +317,8 @@ def render_detailed_markdown(report: dict[str, Any], locale: str) -> str:
         lines.extend(["", f"## {headings['quality_trace']}", ""])
         for key in (
             "assessment_version", "assessment_model", "prompt_version", "assessed_at",
-            "assessment_target", "scope_fingerprint_sha256", "content_sha256",
+            "assessment_target", "assessment_locale", "evidence_policy_version",
+            "scope_fingerprint_sha256", "content_sha256",
             "official_report_sha256", "evidence_manifest_sha256",
         ):
             lines.append(f"- `{key}`: `{assessment.get(key)}`")
@@ -299,6 +326,43 @@ def render_detailed_markdown(report: dict[str, Any], locale: str) -> str:
         lines.extend(["", f"## {headings['limitations']}", ""])
         lines.append("- Quality assessment was not rendered because its binding is invalid.")
     return "\n".join(lines) + "\n"
+
+
+def validated_detailed_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
+    result = localize_report(report, locale)
+    assessment = report.get("semantic_assessment")
+    errors = validate_assessment(assessment, report)
+    summary = validated_executive_summary(report)
+    result["executive_summary"] = summary
+    if errors:
+        for field in (
+            "semantic_assessment", "quality_dimensions", "quality_evidence_completeness",
+            "quality_evidence_policy", "quality_assessment_trace",
+        ):
+            result.pop(field, None)
+        result["quality_verdict"] = "NOT_EVALUATED"
+        result["quality_render_status"] = "INVALID_ASSESSMENT"
+        result["quality_render_errors"] = errors
+    else:
+        verdict, completeness = derive_quality(assessment["dimensions"])
+        policy, _ = evaluate_evidence_policy(assessment, report)
+        result["quality_verdict"] = verdict
+        result["quality_dimensions"] = {
+            name: row["rating"] for name, row in assessment["dimensions"].items()
+        }
+        result["quality_evidence_completeness"] = completeness
+        result["quality_evidence_policy"] = policy
+        result["quality_assessment_trace"] = {
+            key: assessment[key] for key in (
+                "assessment_version", "assessment_model", "prompt_version", "assessed_at",
+                "assessment_target", "assessment_locale", "evidence_policy_version",
+                "scope_fingerprint_sha256", "content_sha256", "official_report_sha256",
+                "evidence_manifest_sha256",
+            )
+        }
+        result["performance_verdict"] = "NOT_EVALUATED"
+        result["quality_render_status"] = "VALIDATED"
+    return result
 
 
 def render_markdown(report: dict[str, Any], locale: str, view: str = "concise") -> str:
@@ -322,7 +386,7 @@ def main() -> int:
         locale = args.lang or str(report.get("report_locale") or "en")
         output = (
             concise_report(report, locale) if args.format == "json" and args.view == "concise"
-            else localize_report(report, locale) if args.format == "json"
+            else validated_detailed_report(report, locale) if args.format == "json"
             else render_markdown(report, locale, args.view)
         )
         print(json.dumps(output, ensure_ascii=False, indent=2) if isinstance(output, dict) else output)

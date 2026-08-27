@@ -16,6 +16,8 @@ The seven required dimensions are `content_completeness`, `clarity_and_readabili
 Run `diagnose_listing.py` first. Select exactly one `quality_contexts.CURRENT` or `quality_contexts.CANDIDATE` target, then copy these bindings into the assessment:
 
 - `assessment_target`;
+- `assessment_locale`, exactly matching `scope.locale`;
+- `evidence_policy_version=1.0`;
 - `scope_fingerprint_sha256`;
 - `content_sha256`;
 - `evidence_manifest_sha256`;
@@ -25,11 +27,13 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 
 ```json
 {
-  "assessment_version": "1.2",
+  "assessment_version": "1.3",
   "assessment_model": "MODEL_IDENTIFIER",
-  "prompt_version": "quality-v1.3.2",
+  "prompt_version": "quality-v1.4.0",
   "assessed_at": "2026-01-01T00:00:00Z",
   "assessment_target": "CURRENT",
+  "assessment_locale": "en_US",
+  "evidence_policy_version": "1.0",
   "scope_fingerprint_sha256": "SCOPE_SHA256",
   "content_sha256": "CONTENT_SHA256",
   "official_report_sha256": "REPORT_SHA256",
@@ -62,7 +66,23 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 }
 ```
 
-The abbreviated example shows field shape; the actual object must contain all seven dimensions. An evaluated dimension requires a rationale and manifest-bound evidence. `NOT_EVALUATED` requires `missing_evidence`. `assessed_at` must include a timezone.
+The abbreviated example shows field shape; the actual object must contain all seven dimensions. An evaluated dimension requires a rationale and manifest-bound evidence. `NOT_EVALUATED` requires `missing_evidence`. `assessed_at` must include a timezone and cannot predate the official report's `data_as_of`.
+
+## Dimension-specific Evidence Policy 1.0
+
+Matching any manifest path is not enough. Each evaluated dimension must meet its own minimum evidence shape:
+
+| Dimension | Minimum bound evidence |
+|---|---|
+| `content_completeness` | `STRONG/ADEQUATE`: at least two content modules; `WEAK`: at least one module plus explicit missing evidence |
+| `clarity_and_readability` | a textual title, item highlight, bullet, description, attribute, or backend-term value |
+| `intent_coverage` | visible Listing text or a visible structured attribute; backend terms alone are insufficient |
+| `buyer_question_coverage` | visible Listing text or a structured attribute |
+| `image_information_coverage` | at least one `images[...]` path |
+| `cross_field_consistency` | evidence from at least two top-level content modules |
+| `localization_quality` | visible text and `assessment_locale == scope.locale` |
+
+`quality_evidence_policy` records each rule code and the non-sensitive module names used. A failed policy makes the merge fail; it is not downgraded to a warning.
 
 ## Derived verdict and evaluated-dimension average
 
@@ -76,23 +96,59 @@ The abbreviated example shows field shape; the actual object must contain all se
 
 `executive_summary.evaluated_dimension_average` uses `STRONG=10`, `ADEQUATE=7`, and `WEAK=3`, rounded to one decimal place. Its status is:
 
-- `FULL`: all seven dimensions evaluated; `comparable=true`;
-- `PARTIAL`: five or six evaluated; the value is shown but `comparable=false`;
+- `FULL`: all seven dimensions evaluated; `structurally_comparable=true`;
+- `PARTIAL`: five or six evaluated; the value is shown but `structurally_comparable=false`;
 - `NOT_SCORED`: fewer than five evaluated; no numeric value.
 
-The result also exposes `dimension_mask` and `weak_dimensions`. A high average never hides a weak dimension or changes the verdict. `quality_score` remains a compatibility alias for the same object. The rubric is `1.1`, is marked `INTERNAL_HEURISTIC` and `official=false`, and does not predict indexing, ranking, traffic, conversion, or sales.
+The result also exposes `dimension_mask`, `weak_dimensions`, `comparison_rule`, and `comparison_cohort_sha256`. `FULL` only means that one report has all seven dimensions. Two score values may be compared only when both are `FULL` and their cohort hashes match. The cohort binds assessment model, prompt, assessment contract, score rubric, Evidence Policy, target, Marketplace, Product Type, requirements, parentage, and locale. The legacy `comparable` field remains `false` because a single report cannot prove a pairwise comparison condition.
+
+A high average never hides a weak dimension or changes the verdict. `quality_score` remains a compatibility alias for the same object. The rubric is `1.1`, is marked `INTERNAL_HEURISTIC` and `official=false`, and does not predict indexing, ranking, traffic, conversion, or sales.
 
 ## Exact suggested values
 
-An exact `suggested_value` additionally requires:
+An exact suggestion additionally requires:
 
 - `attribute` and `current_problem`;
-- `source_evidence` entries with manifest-bound `field_path`, `quote_or_value`, and `value_sha256` already cited by an evaluated dimension;
-- `fact_bindings`, each containing a literal `fact`, its `source_path`, and `source_value_sha256`;
-- every bound fact must occur in the suggested value;
+- `fact_bindings`, each containing a unique `binding_id`, typed scalar `source_value`, exact `source_path`, and canonical `source_value_sha256` already cited by an evaluated dimension;
+- a non-empty `suggested_template` made only of `BOUND_FACT` references and `LITERAL` segments;
+- every binding must be used, and every literal must contain punctuation or whitespace only;
 - `completion_criterion`.
 
+The renderer converts the bound scalar value itself; free `rendered_fact` text is forbidden. Therefore a value and its unit require two bindings. An optional input `suggested_value` must exactly equal the deterministic template output; the merged report derives it again rather than trusting it.
+
+```json
+{
+  "priority": "HIGH",
+  "dimension": "clarity_and_readability",
+  "attribute": "item_name",
+  "current_problem": "The title omits the verified capacity.",
+  "action": "Build the suggestion from verified values.",
+  "fact_bindings": [
+    {
+      "binding_id": "capacity",
+      "source_path": "$.current_content.attributes.capacity[0].value",
+      "source_value": 24,
+      "source_value_sha256": "VALUE_SHA256"
+    },
+    {
+      "binding_id": "unit",
+      "source_path": "$.current_content.attributes.capacity[0].unit",
+      "source_value": "oz",
+      "source_value_sha256": "UNIT_SHA256"
+    }
+  ],
+  "suggested_template": [
+    {"type": "BOUND_FACT", "binding_id": "capacity"},
+    {"type": "LITERAL", "value": " "},
+    {"type": "BOUND_FACT", "binding_id": "unit"}
+  ],
+  "completion_criterion": "The candidate passes the applicable PTD and Preview."
+}
+```
+
 The target dimension cannot be `NOT_EVALUATED`. Exact rewrites remain advisory and must pass the applicable PTD and a bound candidate `VALIDATION_PREVIEW`.
+
+The concise default action does not repeat free model prose. `merge_report.py` maps the selected recommendation dimension to a stable `action_code` and a generic `completion_code`, which the renderer localizes. The original `action` and `completion_criterion` remain visible only in the detailed audit view. This keeps unbound product claims out of the default operational instruction while preserving review traceability.
 
 ## Evidence discipline
 

@@ -33,7 +33,10 @@ class RenderReportTest(unittest.TestCase):
         }
         content = {
             "title": "Example Brand Bottle",
-            "attributes": {"capacity": [{"value": "24 oz"}]},
+            "bullets": ["Leak-resistant lid for daily use."],
+            "description": "A reusable bottle for commuting and workouts.",
+            "images": [{"url": "https://example.invalid/main.jpg", "is_main": True}],
+            "attributes": {"capacity": [{"value": 24, "unit": "oz"}]},
         }
         report = {
             "scope": scope,
@@ -41,10 +44,12 @@ class RenderReportTest(unittest.TestCase):
             "candidate_preview_gate": "PASS",
             "candidate_local_validation_gate": "PASS",
             "release_decision": "PASS",
+            "release_reasons": ["BOUND_CANDIDATE_PREVIEW_VALID"],
             "official_validation_completeness": "COMPLETE",
             "official_evidence_coverage": {},
             "ptd_validation_coverage": {},
             "counts": {},
+            "data_as_of": "2026-01-01T00:00:00Z",
             "quality_contexts": {
                 "CURRENT": build_quality_context("CURRENT", scope, content),
             },
@@ -56,6 +61,7 @@ class RenderReportTest(unittest.TestCase):
                 "message": "Measured value violates the bound PTD constraint.",
             }],
         }
+        report["official_report_sha256"] = official_report_sha256(report)
         dimension_names = (
             "content_completeness",
             "clarity_and_readability",
@@ -65,15 +71,35 @@ class RenderReportTest(unittest.TestCase):
             "cross_field_consistency",
             "localization_quality",
         )
+        def evidence(path, value):
+            return {"field_path": path, "quote_or_value": value, "value_sha256": sha256_json(value)}
+
+        dimension_evidence = {
+            "content_completeness": [
+                evidence("$.current_content.title", "Example Brand Bottle"),
+                evidence("$.current_content.bullets[0]", "Leak-resistant lid for daily use."),
+            ],
+            "clarity_and_readability": [evidence("$.current_content.title", "Example Brand Bottle")],
+            "intent_coverage": [evidence(
+                "$.current_content.description", "A reusable bottle for commuting and workouts."
+            )],
+            "buyer_question_coverage": [evidence(
+                "$.current_content.bullets[0]", "Leak-resistant lid for daily use."
+            )],
+            "image_information_coverage": [evidence(
+                "$.current_content.images[0].url", "https://example.invalid/main.jpg"
+            )],
+            "cross_field_consistency": [
+                evidence("$.current_content.title", "Example Brand Bottle"),
+                evidence("$.current_content.attributes.capacity[0].value", 24),
+            ],
+            "localization_quality": [evidence("$.current_content.title", "Example Brand Bottle")],
+        }
         dimensions = {
             name: {
                 "rating": "STRONG",
                 "rationale": "The supplied content supports this dimension.",
-                "evidence": [{
-                    "field_path": "$.current_content.title",
-                    "quote_or_value": "Example Brand Bottle",
-                    "value_sha256": sha256_json("Example Brand Bottle"),
-                }],
+                "evidence": dimension_evidence[name],
                 "missing_evidence": [],
             }
             for name in dimension_names
@@ -87,11 +113,13 @@ class RenderReportTest(unittest.TestCase):
             "rationale": "只提供了一张图片。",
         })
         assessment = {
-            "assessment_version": "1.2",
+            "assessment_version": "1.3",
             "assessment_model": "test-model",
-            "prompt_version": "quality-v1.3.2",
+            "prompt_version": "quality-v1.4.0",
             "assessed_at": "2026-01-01T00:00:00Z",
             "assessment_target": "CURRENT",
+            "assessment_locale": "en_US",
+            "evidence_policy_version": "1.0",
             "scope_fingerprint_sha256": report["quality_contexts"]["CURRENT"]["scope_fingerprint_sha256"],
             "content_sha256": report["quality_contexts"]["CURRENT"]["content_sha256"],
             "official_report_sha256": official_report_sha256(report),
@@ -103,38 +131,48 @@ class RenderReportTest(unittest.TestCase):
                 "attribute": "item_name",
                 "current_problem": "标题缺少容量。",
                 "action": "重写标题并保留已验证事实。",
-                "suggested_value": "Example Brand Bottle, 24 oz",
                 "completion_criterion": "新标题通过 PTD 与候选预检。",
-                "source_evidence": [{
-                    "field_path": "$.current_content.attributes.capacity[0].value",
-                    "quote_or_value": "24 oz",
-                    "value_sha256": sha256_json("24 oz"),
-                }, {
-                    "field_path": "$.current_content.title",
-                    "quote_or_value": "Example Brand Bottle",
-                    "value_sha256": sha256_json("Example Brand Bottle"),
-                }],
                 "fact_bindings": [
                     {
-                        "fact": "Example Brand Bottle",
+                        "binding_id": "product_name",
                         "source_path": "$.current_content.title",
+                        "source_value": "Example Brand Bottle",
                         "source_value_sha256": sha256_json("Example Brand Bottle"),
                     },
                     {
-                        "fact": "24 oz",
+                        "binding_id": "capacity",
                         "source_path": "$.current_content.attributes.capacity[0].value",
-                        "source_value_sha256": sha256_json("24 oz"),
+                        "source_value": 24,
+                        "source_value_sha256": sha256_json(24),
                     },
+                    {
+                        "binding_id": "capacity_unit",
+                        "source_path": "$.current_content.attributes.capacity[0].unit",
+                        "source_value": "oz",
+                        "source_value_sha256": sha256_json("oz"),
+                    },
+                ],
+                "suggested_template": [
+                    {"type": "BOUND_FACT", "binding_id": "product_name"},
+                    {"type": "LITERAL", "value": ", "},
+                    {"type": "BOUND_FACT", "binding_id": "capacity"},
+                    {"type": "LITERAL", "value": " "},
+                    {"type": "BOUND_FACT", "binding_id": "capacity_unit"},
                 ],
             }],
             "limitations": ["No business performance metrics were supplied."],
         }
         capacity_evidence = {
             "field_path": "$.current_content.attributes.capacity[0].value",
-            "quote_or_value": "24 oz",
-            "value_sha256": sha256_json("24 oz"),
+            "quote_or_value": 24,
+            "value_sha256": sha256_json(24),
         }
         assessment["dimensions"]["clarity_and_readability"]["evidence"].append(capacity_evidence)
+        assessment["dimensions"]["clarity_and_readability"]["evidence"].append({
+            "field_path": "$.current_content.attributes.capacity[0].unit",
+            "quote_or_value": "oz",
+            "value_sha256": sha256_json("oz"),
+        })
         merged, valid = merge_report(report, assessment)
         self.assertTrue(valid)
         return merged
@@ -179,6 +217,8 @@ class RenderReportTest(unittest.TestCase):
         self.assertIn("限制与未评估项", markdown)
         self.assertIn("质量评估追踪", markdown)
         self.assertIn("薄弱 (`WEAK`)", markdown)
+        self.assertIn("已绑定事实", markdown)
+        self.assertIn("$.current_content.attributes.capacity[0].value", markdown)
 
     def test_default_markdown_is_concise_operational_summary(self):
         markdown = MODULE.render_markdown(self.report(), "zh-CN")
@@ -188,11 +228,12 @@ class RenderReportTest(unittest.TestCase):
         self.assertIn("SELLER_SKU", markdown)
         self.assertIn("8.0 / 10", markdown)
         self.assertIn("完整七维评分", markdown)
-        self.assertIn("可横向比较: 是", markdown)
+        self.assertIn("七维结构完整: 是", markdown)
         self.assertIn("非 Amazon 官方评分", markdown)
         self.assertIn("官方验证完整度", markdown)
         self.assertIn("(`COMPLETE`)", markdown)
         self.assertIn("标题没有清楚表达", markdown)
+        self.assertIn("仅使用已绑定的 Listing 事实", markdown)
         self.assertIn("Example Brand Bottle, 24 oz", markdown)
         self.assertNotIn("PTD_CONSTRAINT_VIOLATION", markdown)
 
@@ -221,6 +262,33 @@ class RenderReportTest(unittest.TestCase):
         concise = MODULE.concise_report(report, "zh-CN")
         self.assertEqual("NOT_EVALUATED", concise["summary"]["quality_verdict"])
         self.assertEqual("NOT_SCORED", concise["summary"]["quality_score"]["status"])
+
+    def test_detailed_json_rederives_summary_and_removes_invalid_quality(self):
+        report = self.report()
+        report["executive_summary"]["quality_score"]["value"] = 10.0
+        report["executive_summary"]["primary_action"]["suggested_value"] = "Unsupported claim"
+        detailed = MODULE.validated_detailed_report(report, "zh-CN")
+        self.assertEqual("VALIDATED", detailed["quality_render_status"])
+        self.assertEqual(8.0, detailed["executive_summary"]["quality_score"]["value"])
+        self.assertNotIn("Unsupported claim", json.dumps(detailed, ensure_ascii=False))
+
+        report["quality_verdict"] = "STRONG"
+        report["quality_dimensions"] = {"clarity_and_readability": "STRONG"}
+        report["quality_evidence_policy"] = {"passed": False}
+        report["quality_assessment_trace"] = {"assessment_model": "forged"}
+        report["performance_verdict"] = "STRONG"
+        detailed = MODULE.validated_detailed_report(report, "zh-CN")
+        self.assertEqual("NEEDS_IMPROVEMENT", detailed["quality_verdict"])
+        self.assertEqual("WEAK", detailed["quality_dimensions"]["clarity_and_readability"])
+        self.assertTrue(detailed["quality_evidence_policy"]["passed"])
+        self.assertEqual("test-model", detailed["quality_assessment_trace"]["assessment_model"])
+        self.assertEqual("NOT_EVALUATED", detailed["performance_verdict"])
+
+        report["semantic_assessment"] = {}
+        detailed = MODULE.validated_detailed_report(report, "zh-CN")
+        self.assertEqual("INVALID_ASSESSMENT", detailed["quality_render_status"])
+        self.assertNotIn("semantic_assessment", detailed)
+        self.assertEqual("NOT_EVALUATED", detailed["quality_verdict"])
 
     def test_official_blocker_is_the_primary_concise_action(self):
         report = self.report()

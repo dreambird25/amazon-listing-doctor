@@ -4,7 +4,7 @@ description: "Diagnose Amazon seller Listings from JSON, Excel/CSV exports, or p
 license: MIT
 metadata:
   category: ecommerce/amazon
-  version: 1.3.2
+  version: 1.4.0
   upstream: buluslan/amazon-listing-doctor
 ---
 
@@ -39,7 +39,7 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
      --semantic-assessment semantic-assessment.json
    ```
 
-   This step is complete when the assessment selects `CURRENT` or `CANDIDATE`, binds the scope/content/official-report/evidence-manifest hashes emitted by the deterministic engine, all seven dimensions are present, every evaluated rating cites a manifest path and matching value hash, and the merge script returns `merge_status=OK`. Use the script-derived verdict and `executive_summary.evaluated_dimension_average`; do not invent or override a score. Five or six evaluated dimensions produce `PARTIAL` with `comparable=false`; only all seven produce `FULL` with `comparable=true`. It is an internal heuristic, never an Amazon score or performance prediction.
+   This step is complete when the assessment uses `assessment_version=1.3`, selects `CURRENT` or `CANDIDATE`, binds the scope/content/official-report/evidence-manifest hashes emitted by the deterministic engine, matches the Listing locale and evidence time, includes all seven dimensions, satisfies the dimension-specific Evidence Policy, and the merge script returns `merge_status=OK`. Use the script-derived verdict and `executive_summary.evaluated_dimension_average`; do not invent or override a score. Five or six evaluated dimensions produce `PARTIAL`. Seven produce structurally complete `FULL`, but two scores are comparable only when both are `FULL` and have the same `comparison_cohort_sha256`. The score is an internal heuristic, never an Amazon score or performance prediction.
 5. Render in the user's language while preserving stable codes and Amazon's original message. `scope.locale` controls Listing evidence; `report_locale` controls display and must never change validation. For Chinese Markdown:
 
    ```bash
@@ -52,8 +52,8 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
    python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed
    ```
 
-   Detailed Markdown must include the concise conclusion, official findings, all seven quality dimensions, recommendations, limitations, and the assessment trace. Write rationales, recommendations, and suggested values in `report_locale`. An exact suggested value is optional and requires the affected attribute, current problem, manifest-bound source evidence, and per-fact bindings. It remains advisory and must be rechecked against PTD and a bound candidate Preview. `PASS` means the current evidence conditions are met; never label it “published successfully.”
-6. For regression against a private Golden Dataset, use `scripts/evaluate_batch.py`. The default mode regresses official gates; `--mode quality-summary` regresses the bound concise quality verdict, scoring coverage, weak dimensions, primary action, and suggested-value permission. Never add raw private Listing records to this repository; commit only synthetic fixtures and non-identifying aggregate conclusions. Read [the private practice guide](references/private-golden-dataset.md) before sampling production-like data.
+   Detailed Markdown and JSON must revalidate the embedded assessment before exposing quality fields. They include the concise conclusion, official findings, all seven quality dimensions, Evidence Policy result, recommendations, limitations, fact bindings, and assessment trace. Write rationales and recommendations in `report_locale`. An exact suggested value is optional and can contain only deterministically rendered, manifest-bound scalar values plus punctuation and spaces; units and every other product fact require their own binding. It remains advisory and must be rechecked against PTD and a bound candidate Preview. `PASS` means the current evidence conditions are met; never label it “published successfully.”
+6. For private practice, use `scripts/evaluate_batch.py` with an explicit intent. `--mode observation` collects aggregate distributions without expected labels. `--mode golden-official` requires at least one expected official gate per sample. `--mode golden-quality` requires at least one expected concise-quality outcome per sample. Use a private `LISTING_DOCTOR_SAMPLE_REF_KEY` when stable cross-run sample references are needed; otherwise output uses non-identifying row indexes. Never add raw private Listing records to this repository; commit only synthetic fixtures and non-identifying aggregate conclusions. Read [the private practice guide](references/private-golden-dataset.md) before sampling production-like data.
 
 ## Evidence interpretation
 

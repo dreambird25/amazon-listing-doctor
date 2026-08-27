@@ -2,6 +2,26 @@
 
 本项目采用语义化版本。版本记录描述公共契约和行为变化，不登记任何接入方私有实现或数据。
 
+## [1.4.0] - 2026-08-27
+
+### 质量证据契约
+
+- 语义评估升级为 `assessment_version=1.3`，强制绑定 `assessment_locale`、`evidence_policy_version=1.0` 和不早于官方报告 `data_as_of` 的评估时间。
+- 七个质量维度引入独立 Evidence Policy：图片维度必须引用图片路径，跨字段一致性必须引用至少两个内容模块，语言本地化必须匹配 scope locale 和可见文本；其他维度也有对应最低证据路径。
+- 合并时要求官方报告包含 `scope`、`release_reasons`、`data_as_of` 和自校验 `official_report_sha256`，避免缺少关键证据时仍生成质量结论。
+
+### 确定性改写与分数比较
+
+- 精确建议改为类型化 `fact_bindings + suggested_template`；输出只能由已绑定原始标量值与标点/空格确定性拼接。自由 `rendered_fact`、未绑定单位和带字母/数字的模板常量均被拒绝。
+- 默认简洁行动与完成条件改为由质量维度派生的稳定 code 及本地化文案；模型自由 `action/completion_criterion` 仅在详细审计视图保留，不再将未绑定产品声明带入默认操作指令。
+- `FULL` 仅表示七维结构完整；新增 `structurally_comparable`、`comparison_rule` 和 `comparison_cohort_sha256`。两个分数只有同为 `FULL` 且模型、Prompt、契约、评分规则、证据政策、目标、Marketplace、Product Type、requirements、parentage 和 Locale 组成的队列哈希一致时才能比较。
+
+### 输出与私有回归
+
+- Detailed Markdown 显示事实绑定的原始值、字段路径和值哈希；Detailed JSON 不再盲信内嵌 summary，会重验评估并重新派生结论，无效时移除质量载荷并标记 `INVALID_ASSESSMENT`。
+- 批量工具区分 `observation`、`golden-official` 和 `golden-quality`；Golden 模式必须提供至少一个预期值。默认样本引用改为无识别性行号，需要跨次稳定引用时由私有环境通过 `LISTING_DOCTOR_SAMPLE_REF_KEY` 生成 HMAC-SHA-256。建议文本指纹也只在同一私有 key 下生成 HMAC，不输出可词典反查的普通哈希。
+- 行为测试增加到 98 个，新增维度路径误绑、空文本证据、Locale/时间错绑、队列哈希、未评估事实注入、自由渲染事实、Detailed JSON 篡改与严格 Golden 模式回归。
+
 ## [1.3.2] - 2026-08-27
 
 ### 结论与官方证据

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +14,14 @@ from typing import Any
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from quality_contract import official_report_sha256, sha256_json, valid_sha256
+from quality_contract import (
+    comparison_cohort_sha256,
+    official_report_sha256,
+    scope_fingerprint,
+    sha256_json,
+    valid_sha256,
+)
+from quality_policy import EVIDENCE_POLICY_VERSION, evaluate_evidence_policy
 from summary_contract import official_action, primary_official_finding
 
 
@@ -29,6 +37,16 @@ DIMENSIONS = (
 RATINGS = {"STRONG", "ADEQUATE", "WEAK", "NOT_EVALUATED"}
 PRIORITIES = {"HIGH", "MEDIUM", "LOW"}
 PRIORITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+QUALITY_ACTION_CODES = {
+    "content_completeness": "COMPLETE_MISSING_CONTENT_EVIDENCE",
+    "clarity_and_readability": "IMPROVE_CLARITY_WITH_BOUND_FACTS",
+    "intent_coverage": "COVER_VERIFIED_USE_INTENT",
+    "buyer_question_coverage": "ANSWER_BUYER_QUESTIONS_WITH_EVIDENCE",
+    "image_information_coverage": "ADD_MISSING_IMAGE_INFORMATION",
+    "cross_field_consistency": "RESOLVE_CROSS_FIELD_INCONSISTENCY",
+    "localization_quality": "REVIEW_LOCALIZATION_FOR_SCOPE",
+}
+QUALITY_COMPLETION_CODE = "REASSESS_QUALITY_DIMENSION_WITH_BOUND_EVIDENCE"
 RATING_POINTS = {"STRONG": 10.0, "ADEQUATE": 7.0, "WEAK": 3.0}
 MIN_SCORED_DIMENSIONS = 5
 SCORE_RUBRIC_VERSION = "1.1"
@@ -43,6 +61,10 @@ OFFICIAL_REPORT_FIELDS = {
     "counts",
     "findings",
     "quality_contexts",
+    "scope",
+    "release_reasons",
+    "official_report_sha256",
+    "data_as_of",
 }
 
 
@@ -60,8 +82,54 @@ def timezone_aware_timestamp(value: Any) -> bool:
     return parsed.tzinfo is not None
 
 
+def parse_timestamp(value: Any) -> datetime | None:
+    if not nonempty_text(value):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
 def scalar_value(value: Any) -> bool:
-    return value is None or isinstance(value, (str, int, float, bool))
+    return value is None or isinstance(value, (str, int, bool)) \
+        or isinstance(value, float) and math.isfinite(value)
+
+
+def render_bound_value(value: Any) -> str | None:
+    if value is None or not scalar_value(value):
+        return None
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def render_suggested_template(recommendation: dict[str, Any]) -> str | None:
+    bindings = recommendation.get("fact_bindings")
+    template = recommendation.get("suggested_template")
+    if not isinstance(bindings, list) or not isinstance(template, list):
+        return None
+    rendered_by_id = {
+        item.get("binding_id"): render_bound_value(item.get("source_value"))
+        for item in bindings if isinstance(item, dict)
+    }
+    parts: list[str] = []
+    for segment in template:
+        if not isinstance(segment, dict):
+            return None
+        segment_type = segment.get("type")
+        if segment_type == "BOUND_FACT":
+            value = rendered_by_id.get(segment.get("binding_id"))
+            if not nonempty_text(value):
+                return None
+            parts.append(value)
+        elif segment_type == "LITERAL" and isinstance(segment.get("value"), str):
+            parts.append(segment["value"])
+        else:
+            return None
+    result = "".join(parts)
+    return result if result.strip() else None
 
 
 def validate_assessment(
@@ -70,13 +138,15 @@ def validate_assessment(
     errors: list[str] = []
     if not isinstance(assessment, dict):
         return ["semantic assessment must be a JSON object"]
-    if assessment.get("assessment_version") != "1.2":
-        errors.append("assessment_version must be 1.2")
+    if assessment.get("assessment_version") != "1.3":
+        errors.append("assessment_version must be 1.3")
     for field in ("assessment_model", "prompt_version"):
         if not nonempty_text(assessment.get(field)):
             errors.append(f"{field} is required")
     if not timezone_aware_timestamp(assessment.get("assessed_at")):
         errors.append("assessed_at must be a timezone-aware ISO-8601 timestamp")
+    if not nonempty_text(assessment.get("assessment_locale")):
+        errors.append("assessment_locale is required")
 
     target = str(assessment.get("assessment_target") or "").upper()
     if target not in {"CURRENT", "CANDIDATE"}:
@@ -101,6 +171,13 @@ def validate_assessment(
         if not isinstance(context, dict):
             errors.append(f"quality context for {target} is missing from the official report")
         else:
+            scope = official_report.get("scope")
+            scope = scope if isinstance(scope, dict) else {}
+            if context.get("context_version") != "1.0" \
+                    or context.get("assessment_target") != target:
+                errors.append(f"quality context for {target} has invalid metadata")
+            if context.get("scope_fingerprint_sha256") != scope_fingerprint(scope):
+                errors.append(f"quality context for {target} does not match report scope")
             for field in (
                 "scope_fingerprint_sha256", "content_sha256", "evidence_manifest_sha256",
             ):
@@ -110,6 +187,18 @@ def validate_assessment(
             if not isinstance(manifest, list):
                 errors.append("official report evidence_manifest must be an array")
             else:
+                manifest_paths = [
+                    item.get("field_path") for item in manifest if isinstance(item, dict)
+                ]
+                valid_manifest = all(
+                    isinstance(item, dict)
+                    and nonempty_text(item.get("field_path"))
+                    and valid_sha256(item.get("value_sha256"))
+                    and item.get("value_type") in {"null", "boolean", "number", "string"}
+                    for item in manifest
+                ) and len(manifest_paths) == len(set(manifest_paths))
+                if not valid_manifest or context.get("evidence_manifest_sha256") != sha256_json(manifest):
+                    errors.append("official report evidence_manifest integrity check failed")
                 manifest_by_path = {
                     str(item.get("field_path")): str(item.get("value_sha256"))
                     for item in manifest if isinstance(item, dict)
@@ -118,6 +207,16 @@ def validate_assessment(
                 }
         if assessment.get("official_report_sha256") != computed_report_hash:
             errors.append("official_report_sha256 does not match the supplied official report")
+        scope = official_report.get("scope")
+        scope = scope if isinstance(scope, dict) else {}
+        if not timezone_aware_timestamp(official_report.get("data_as_of")):
+            errors.append("official report data_as_of must be a timezone-aware ISO-8601 timestamp")
+        if assessment.get("assessment_locale") != scope.get("locale"):
+            errors.append("assessment_locale does not match the official report scope locale")
+        assessed_at = parse_timestamp(assessment.get("assessed_at"))
+        data_as_of = parse_timestamp(official_report.get("data_as_of"))
+        if assessed_at and data_as_of and assessed_at < data_as_of:
+            errors.append("assessed_at must not predate official report data_as_of")
 
     dimensions = assessment.get("dimensions")
     if not isinstance(dimensions, dict):
@@ -147,24 +246,29 @@ def validate_assessment(
         if not isinstance(missing_evidence, list):
             errors.append(f"{name}.missing_evidence must be an array")
             missing_evidence = []
+        valid_evidence = all(
+            isinstance(item, dict)
+            and nonempty_text(item.get("field_path"))
+            and scalar_value(item.get("quote_or_value"))
+            and valid_sha256(item.get("value_sha256"))
+            and item.get("value_sha256") == sha256_json(item.get("quote_or_value"))
+            and (
+                not manifest_by_path
+                or manifest_by_path.get(item.get("field_path")) == item.get("value_sha256")
+            )
+            for item in evidence
+        )
+        if evidence and not valid_evidence:
+            errors.append(
+                f"{name} evidence must be manifest-bound with field_path, "
+                "quote_or_value, and value_sha256"
+            )
         if rating == "NOT_EVALUATED":
             if not any(nonempty_text(item) for item in missing_evidence):
                 errors.append(f"{name} requires missing_evidence when NOT_EVALUATED")
         else:
             if not nonempty_text(row.get("rationale")):
                 errors.append(f"{name}.rationale is required for an evaluated rating")
-            valid_evidence = all(
-                isinstance(item, dict)
-                and nonempty_text(item.get("field_path"))
-                and scalar_value(item.get("quote_or_value"))
-                and valid_sha256(item.get("value_sha256"))
-                and item.get("value_sha256") == sha256_json(item.get("quote_or_value"))
-                and (
-                    not manifest_by_path
-                    or manifest_by_path.get(item.get("field_path")) == item.get("value_sha256")
-                )
-                for item in evidence
-            )
             if not evidence or not valid_evidence:
                 errors.append(
                     f"{name} requires manifest-bound evidence with field_path, "
@@ -178,6 +282,7 @@ def validate_assessment(
             dimensions.get(name, {}).get("evidence", [])
             if isinstance(dimensions.get(name), dict) else []
         )
+        if dimensions.get(name, {}).get("rating") != "NOT_EVALUATED"
         if isinstance(item, dict)
         and nonempty_text(item.get("field_path"))
         and valid_sha256(item.get("value_sha256"))
@@ -202,60 +307,79 @@ def validate_assessment(
             for field in ("attribute", "current_problem", "suggested_value"):
                 if field in recommendation and not nonempty_text(recommendation.get(field)):
                     errors.append(f"{prefix}.{field} must be a non-empty string when supplied")
-            if "suggested_value" in recommendation:
+            has_exact_suggestion = "suggested_template" in recommendation \
+                or "fact_bindings" in recommendation or "suggested_value" in recommendation
+            if has_exact_suggestion:
                 dimension = recommendation.get("dimension")
                 dimension_row = dimensions.get(dimension) if dimension in DIMENSIONS else None
                 if isinstance(dimension_row, dict) and dimension_row.get("rating") == "NOT_EVALUATED":
-                    errors.append(f"{prefix}.suggested_value cannot target a NOT_EVALUATED dimension")
+                    errors.append(f"{prefix}.suggested_template cannot target a NOT_EVALUATED dimension")
                 if not nonempty_text(recommendation.get("attribute")):
-                    errors.append(f"{prefix}.attribute is required with suggested_value")
+                    errors.append(f"{prefix}.attribute is required with suggested_template")
                 if not nonempty_text(recommendation.get("current_problem")):
-                    errors.append(f"{prefix}.current_problem is required with suggested_value")
-                source_evidence = recommendation.get("source_evidence")
-                valid_source_evidence = isinstance(source_evidence, list) and bool(source_evidence) \
-                    and all(
-                        isinstance(item, dict)
-                        and nonempty_text(item.get("field_path"))
-                        and scalar_value(item.get("quote_or_value"))
-                        and valid_sha256(item.get("value_sha256"))
-                        and item.get("value_sha256") == sha256_json(item.get("quote_or_value"))
-                        for item in source_evidence
-                    )
-                if not valid_source_evidence:
-                    errors.append(
-                        f"{prefix}.source_evidence with field_path, quote_or_value, and value_sha256 "
-                        "is required with suggested_value"
-                    )
-                elif any(
-                    (item["field_path"].strip(), item["value_sha256"].lower())
-                    not in assessed_evidence
-                    for item in source_evidence
-                ):
-                    errors.append(
-                        f"{prefix}.source_evidence must match evidence from an evaluated dimension"
-                    )
+                    errors.append(f"{prefix}.current_problem is required with suggested_template")
                 fact_bindings = recommendation.get("fact_bindings")
-                valid_fact_bindings = isinstance(fact_bindings, list) and bool(fact_bindings) \
-                    and all(
+                valid_fact_bindings = isinstance(fact_bindings, list) and bool(fact_bindings)
+                binding_ids: list[str] = []
+                if valid_fact_bindings:
+                    valid_fact_bindings = all(
                         isinstance(item, dict)
-                        and nonempty_text(item.get("fact"))
+                        and nonempty_text(item.get("binding_id"))
                         and nonempty_text(item.get("source_path"))
+                        and scalar_value(item.get("source_value"))
+                        and item.get("source_value") is not None
                         and valid_sha256(item.get("source_value_sha256"))
-                        and item.get("source_value_sha256") == sha256_json(item.get("fact"))
+                        and item.get("source_value_sha256") == sha256_json(item.get("source_value"))
                         and (
                             item["source_path"].strip(), item["source_value_sha256"].lower()
                         ) in assessed_evidence
-                        and item["fact"].casefold() in recommendation["suggested_value"].casefold()
+                        and "rendered_fact" not in item
                         for item in fact_bindings
                     )
+                    binding_ids = [
+                        item.get("binding_id") for item in fact_bindings if isinstance(item, dict)
+                    ]
+                    valid_fact_bindings = valid_fact_bindings \
+                        and len(binding_ids) == len(set(binding_ids))
                 if not valid_fact_bindings:
                     errors.append(
-                        f"{prefix}.fact_bindings must bind every suggested fact to assessed evidence"
+                        f"{prefix}.fact_bindings must contain unique typed facts bound to assessed evidence"
                     )
+                template = recommendation.get("suggested_template")
+                valid_template = isinstance(template, list) and bool(template)
+                referenced_ids: list[str] = []
+                if valid_template:
+                    for segment in template:
+                        if not isinstance(segment, dict):
+                            valid_template = False
+                            continue
+                        if segment.get("type") == "BOUND_FACT" \
+                                and nonempty_text(segment.get("binding_id")):
+                            referenced_ids.append(segment["binding_id"])
+                        elif segment.get("type") == "LITERAL" \
+                                and isinstance(segment.get("value"), str) \
+                                and not any(char.isalnum() for char in segment["value"]):
+                            continue
+                        else:
+                            valid_template = False
+                    valid_template = valid_template \
+                        and set(referenced_ids) == set(binding_ids) \
+                        and render_suggested_template(recommendation) is not None
+                if not valid_template:
+                    errors.append(
+                        f"{prefix}.suggested_template must use every bound fact and punctuation-only literals"
+                    )
+                rendered = render_suggested_template(recommendation)
+                if "suggested_value" in recommendation \
+                        and recommendation.get("suggested_value") != rendered:
+                    errors.append(f"{prefix}.suggested_value must equal the deterministic template output")
 
     limitations = assessment.get("limitations", [])
     if not isinstance(limitations, list) or not all(nonempty_text(item) for item in limitations):
         errors.append("limitations must be an array of non-empty strings")
+    if isinstance(official_report, dict):
+        _, policy_errors = evaluate_evidence_policy(assessment, official_report)
+        errors.extend(policy_errors)
     return errors
 
 
@@ -274,7 +398,10 @@ def derive_quality(dimensions: dict[str, Any]) -> tuple[str, str]:
     return "ADEQUATE", completeness
 
 
-def derive_quality_score(dimensions: dict[str, Any]) -> dict[str, Any]:
+def derive_quality_score(
+        dimensions: dict[str, Any], assessment: dict[str, Any],
+        scope: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     evaluated_rows = [
         (name, dimensions[name]["rating"])
         for name in DIMENSIONS
@@ -295,7 +422,12 @@ def derive_quality_score(dimensions: dict[str, Any]) -> dict[str, Any]:
         "scale": 10,
         "type": "INTERNAL_HEURISTIC",
         "official": False,
-        "comparable": status == "FULL",
+        "comparable": False,
+        "structurally_comparable": status == "FULL",
+        "comparison_rule": "BOTH_FULL_AND_SAME_COMPARISON_COHORT",
+        "comparison_cohort_sha256": comparison_cohort_sha256(
+            assessment, SCORE_RUBRIC_VERSION, EVIDENCE_POLICY_VERSION, scope
+        ),
         "evaluated_dimensions": len(evaluated),
         "total_dimensions": len(DIMENSIONS),
         "minimum_dimensions_required": MIN_SCORED_DIMENSIONS,
@@ -340,7 +472,12 @@ def primary_recommendation(
     if not ordered:
         return None
     recommendation = copy.deepcopy(ordered[0][1])
-    recommendation["rewrite_is_advisory"] = "suggested_value" in recommendation
+    recommendation["action_code"] = QUALITY_ACTION_CODES[recommendation["dimension"]]
+    recommendation["completion_code"] = QUALITY_COMPLETION_CODE
+    rendered = render_suggested_template(recommendation)
+    if rendered is not None:
+        recommendation["suggested_value"] = rendered
+    recommendation["rewrite_is_advisory"] = rendered is not None
     return recommendation
 
 
@@ -351,7 +488,7 @@ def build_executive_summary(
     quality_reason = primary_quality_reason(assessment["dimensions"])
     quality_action = primary_recommendation(assessment.get("recommendations") or [], quality_reason)
     official_reason = primary_official_finding(official_report)
-    score = derive_quality_score(assessment["dimensions"])
+    score = derive_quality_score(assessment["dimensions"], assessment, scope)
     summary = {
         "summary_version": "1.1",
         "identity": {
@@ -393,6 +530,7 @@ def merge_report(official_report: Any, assessment: Any) -> tuple[dict[str, Any],
 
     result = copy.deepcopy(official_report)
     verdict, completeness = derive_quality(assessment["dimensions"])
+    evidence_policy, _ = evaluate_evidence_policy(assessment, official_report)
     result.update({
         "merge_status": "OK",
         "quality_verdict": verdict,
@@ -401,6 +539,7 @@ def merge_report(official_report: Any, assessment: Any) -> tuple[dict[str, Any],
             for name in DIMENSIONS
         },
         "quality_evidence_completeness": completeness,
+        "quality_evidence_policy": evidence_policy,
         "semantic_assessment": assessment,
         "quality_assessment_trace": {
             "assessment_version": assessment["assessment_version"],
@@ -408,6 +547,8 @@ def merge_report(official_report: Any, assessment: Any) -> tuple[dict[str, Any],
             "prompt_version": assessment["prompt_version"],
             "assessed_at": assessment["assessed_at"],
             "assessment_target": assessment["assessment_target"],
+            "assessment_locale": assessment["assessment_locale"],
+            "evidence_policy_version": assessment["evidence_policy_version"],
             "scope_fingerprint_sha256": assessment["scope_fingerprint_sha256"],
             "content_sha256": assessment["content_sha256"],
             "official_report_sha256": assessment["official_report_sha256"],

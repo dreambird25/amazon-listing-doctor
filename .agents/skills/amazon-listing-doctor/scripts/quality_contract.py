@@ -25,6 +25,7 @@ MERGE_ONLY_FIELDS = {
     "quality_verdict",
     "quality_dimensions",
     "quality_evidence_completeness",
+    "quality_evidence_policy",
     "semantic_assessment",
     "quality_assessment_trace",
     "performance_verdict",
@@ -99,3 +100,24 @@ def official_report_material(report: dict[str, Any]) -> dict[str, Any]:
 
 def official_report_sha256(report: dict[str, Any]) -> str:
     return sha256_json(official_report_material(report))
+
+
+def comparison_cohort_sha256(
+        assessment: dict[str, Any], rubric_version: str, evidence_policy_version: str,
+        scope: dict[str, Any] | None = None,
+) -> str:
+    scope = scope or {}
+    return sha256_json({
+        "assessment_model": assessment.get("assessment_model"),
+        "prompt_version": assessment.get("prompt_version"),
+        "assessment_version": assessment.get("assessment_version"),
+        "rubric_version": rubric_version,
+        "evidence_policy_version": evidence_policy_version,
+        "assessment_target": assessment.get("assessment_target"),
+        "assessment_locale": assessment.get("assessment_locale"),
+        "marketplace_id": scope.get("marketplace_id"),
+        "product_type": scope.get("product_type"),
+        "requirements": scope.get("requirements"),
+        "parentage_level": scope.get("parentage_level"),
+        "scope_locale": scope.get("locale"),
+    })

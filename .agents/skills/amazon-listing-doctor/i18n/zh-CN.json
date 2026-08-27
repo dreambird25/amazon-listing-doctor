@@ -24,6 +24,7 @@
     "evaluated_dimension_average": "已评估维度平均分",
     "score_status": "评分覆盖状态",
     "comparable": "可横向比较",
+    "structurally_comparable": "七维结构完整",
     "weak_dimensions": "弱项维度",
     "quality_verdict": "内容质量结论",
     "primary_reason": "主要原因",
@@ -43,6 +44,10 @@
     "missing_evidence": "缺失证据",
     "priority": "优先级",
     "dimension": "维度",
+    "attribute": "目标属性",
+    "current_problem": "当前问题",
+    "bound_fact": "已绑定事实",
+    "evidence_policy": "证据政策",
     "limitations": "限制",
     "none": "无"
   },
@@ -85,11 +90,19 @@
   },
   "action_codes": {
     "FIX_OFFICIAL_BLOCKER_AND_REVALIDATE": "先修复上述 Amazon 官方错误，再重新运行完整校验。",
-    "REVIEW_OFFICIAL_EVIDENCE": "先补齐或复核上述官方证据，再决定是否发布。"
+    "REVIEW_OFFICIAL_EVIDENCE": "先补齐或复核上述官方证据，再决定是否发布。",
+    "COMPLETE_MISSING_CONTENT_EVIDENCE": "先补齐缺失的内容证据，再优化 Listing。",
+    "IMPROVE_CLARITY_WITH_BOUND_FACTS": "仅使用已绑定的 Listing 事实改善表达清晰度。",
+    "COVER_VERIFIED_USE_INTENT": "使用已验证的 Listing 事实补充缺失的使用意图。",
+    "ANSWER_BUYER_QUESTIONS_WITH_EVIDENCE": "使用已验证的 Listing 证据回答缺失的买家问题。",
+    "ADD_MISSING_IMAGE_INFORMATION": "补充缺失的图片信息并验证其元数据。",
+    "RESOLVE_CROSS_FIELD_INCONSISTENCY": "修复已引用 Listing 字段之间的不一致。",
+    "REVIEW_LOCALIZATION_FOR_SCOPE": "按已绑定的 Marketplace Locale 复核本地化内容。"
   },
   "completion_codes": {
     "OFFICIAL_BLOCKER_CLEARED": "该官方错误不再出现，并完成候选预检与适用 PTD 校验。",
-    "OFFICIAL_EVIDENCE_COMPLETED": "官方证据已补齐且发布决策不再是未知或未评估。"
+    "OFFICIAL_EVIDENCE_COMPLETED": "官方证据已补齐且发布决策不再是未知或未评估。",
+    "REASSESS_QUALITY_DIMENSION_WITH_BOUND_EVIDENCE": "重新运行已绑定的质量评估，确认目标维度不再是薄弱或未评估。"
   },
   "release_labels": {
     "BLOCK": "阻止发布",

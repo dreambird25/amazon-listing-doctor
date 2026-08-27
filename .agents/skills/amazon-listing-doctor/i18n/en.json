@@ -24,6 +24,7 @@
     "evaluated_dimension_average": "Evaluated-dimension average",
     "score_status": "Score coverage status",
     "comparable": "Comparable",
+    "structurally_comparable": "Full seven-dimension structure",
     "weak_dimensions": "Weak dimensions",
     "quality_verdict": "Content quality verdict",
     "primary_reason": "Primary reason",
@@ -43,6 +44,10 @@
     "missing_evidence": "Missing evidence",
     "priority": "Priority",
     "dimension": "Dimension",
+    "attribute": "Target attribute",
+    "current_problem": "Current problem",
+    "bound_fact": "Bound fact",
+    "evidence_policy": "Evidence Policy",
     "limitations": "Limitations",
     "none": "None"
   },
@@ -85,11 +90,19 @@
   },
   "action_codes": {
     "FIX_OFFICIAL_BLOCKER_AND_REVALIDATE": "Fix the official Amazon error first, then rerun complete validation.",
-    "REVIEW_OFFICIAL_EVIDENCE": "Complete or review the official evidence before deciding whether to release."
+    "REVIEW_OFFICIAL_EVIDENCE": "Complete or review the official evidence before deciding whether to release.",
+    "COMPLETE_MISSING_CONTENT_EVIDENCE": "Complete the missing content evidence before optimizing the Listing.",
+    "IMPROVE_CLARITY_WITH_BOUND_FACTS": "Improve clarity using only facts bound to the assessed Listing.",
+    "COVER_VERIFIED_USE_INTENT": "Cover the missing use intent using verified Listing facts.",
+    "ANSWER_BUYER_QUESTIONS_WITH_EVIDENCE": "Answer the missing buyer questions using verified Listing evidence.",
+    "ADD_MISSING_IMAGE_INFORMATION": "Add the missing image information and verify its metadata.",
+    "RESOLVE_CROSS_FIELD_INCONSISTENCY": "Resolve the inconsistency across the cited Listing fields.",
+    "REVIEW_LOCALIZATION_FOR_SCOPE": "Review localization for the bound Marketplace locale."
   },
   "completion_codes": {
     "OFFICIAL_BLOCKER_CLEARED": "The official error is absent and the candidate Preview and applicable PTD validation are complete.",
-    "OFFICIAL_EVIDENCE_COMPLETED": "Official evidence is complete and the release decision is no longer unknown or not evaluated."
+    "OFFICIAL_EVIDENCE_COMPLETED": "Official evidence is complete and the release decision is no longer unknown or not evaluated.",
+    "REASSESS_QUALITY_DIMENSION_WITH_BOUND_EVIDENCE": "Re-run the bound assessment and confirm the target dimension is no longer weak or unassessed."
   },
   "release_labels": {
     "BLOCK": "Release blocked",

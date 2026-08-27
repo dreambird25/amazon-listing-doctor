@@ -4,7 +4,7 @@
 
 这是 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的公共 Fork，不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
-当前版本：**v1.3.2**。本版将默认简洁结论与 Marketplace、Seller SKU、内容/官方报告哈希和字段证据清单绑定，并区分完整可比评分与部分不可比平均分，详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前版本：**v1.4.0**。本版为七个质量维度增加最低证据政策，将精确改写限制为“已绑定标量事实 + 标点/空格”的确定性模板，并新增评分比较队列、严格 Golden Dataset 模式和可重验的 Detailed JSON，详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 它回答三个不同问题
 
@@ -59,11 +59,11 @@ https://github.com/dreambird25/amazon-listing-doctor/tree/main/.agents/skills/am
 
 ## 生产使用结论
 
-v1.3.2 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。
+v1.4.0 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。质量建议还会重验评估目标、Locale、时间、官方报告哈希与按维度证据路径。
 
 无人值守自动放行仍需由接入系统补齐：完整 Draft 2019-09 + Amazon vocabulary PTD 校验、Preview 独立限流、授权提交和提交后 issues/status 对账。Amazon 明确说明 Preview 适合少量 Listing，不是高吞吐生产主链路。官方依据见 [`生产就绪研究`](docs/production-readiness-research.md)，接入门禁见 [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)。
 
-本版使用固定随机种子对 30 条私有 Listing 做了只读实践，覆盖多个北美/欧洲站点和 Product Type。30 条重复运行的门禁均一致且没有引擎系统异常；实践同时确认 legacy issues 与另一问题视图可能不同步，且没有可追溯快照、PTD 和候选 Preview 时必须安全降级为不完整证据。公开仓库不保存这 30 条记录、标识或原始响应，只保留合成示例和不可逆脱敏回归样本。
+本版使用固定随机种子对 30 条私有 Listing 做了只读实践，覆盖多个北美/欧洲站点和 Product Type。30 条重复运行的门禁均一致且没有引擎系统异常；实践同时确认 legacy issues 与另一问题视图可能不同步，且没有可追溯快照、PTD 和候选 Preview 时必须安全降级为不完整证据。公开仓库不保存这 30 条记录、标识、哈希化单条引用或原始响应，只保留合成示例和聚合实践结论。
 
 示例输入位于 [`examples`](.agents/skills/amazon-listing-doctor/examples/README.md)。
 
@@ -88,11 +88,12 @@ python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/e
 ```bash
 python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown
 python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed
-python scripts/evaluate_batch.py --file private-golden-dataset.jsonl
-python scripts/evaluate_batch.py --file private-quality-golden.jsonl --mode quality-summary
+python scripts/evaluate_batch.py --file private-observation.jsonl --mode observation
+python scripts/evaluate_batch.py --file private-golden-dataset.jsonl --mode golden-official
+python scripts/evaluate_batch.py --file private-quality-golden.jsonl --mode golden-quality
 ```
 
-第一条命令默认输出简洁用户结论；`--view detailed` 输出完整审计报告。`scope.locale` 决定 Listing 校验语言；`report_locale`/`--lang` 只决定展示语言。候选 Preview 的 `PASS` 展示为“候选预检通过”，绝不写成“发布成功”。批量回归只输出聚合门禁和哈希化样本引用，不回显原始 Listing 内容。
+第一条命令默认输出简洁用户结论；`--view detailed` 输出完整审计报告，Markdown 与 JSON 都会重验内嵌语义评估，不信任被篡改的结论。`scope.locale` 决定 Listing 校验语言；`report_locale`/`--lang` 只决定展示语言。候选 Preview 的 `PASS` 展示为“候选预检通过”，绝不写成“发布成功”。批量工具的观测模式不要求标签，Golden 模式缺少预期值则直接失败；未配置私有 HMAC key 时仅输出无识别性行号。
 
 内容质量由 Agent 按固定七维契约生成，再由确定性脚本验证和合并：
 
@@ -110,14 +111,14 @@ Seller SKU：SELLER_SKU
 ASIN：ASIN_PLACEHOLDER
 发布决策：需要人工复核
 已评估维度平均分：8.0 / 10（内部启发式评分，非 Amazon 官方评分）
-评分覆盖：FULL（7/7，可横向比较）
+评分覆盖：FULL（7/7，结构完整）
 弱项维度：清晰度与可读性、图片信息覆盖
 主要原因：标题没有清楚表达已经验证的容量信息。
-建议行动：重写标题并保留已验证事实。
+建议行动：仅使用已绑定的 Listing 事实改善表达清晰度。
 建议改为：Example Brand Bottle, 24 oz
 ```
 
-评分规则固定为 `STRONG=10`、`ADEQUATE=7`、`WEAK=3`，只对已评估维度求平均并保留一位小数；七维齐全才是 `FULL/comparable=true`，五或六维是 `PARTIAL/comparable=false`，少于五维为 `NOT_SCORED`。高平均分不会隐藏 `WEAK` 维度。存在适用于当前 Listing/候选的官方错误、证据异常或警告时，它优先成为首要原因与行动。语义评估必须绑定目标内容与官方报告哈希；精确改写还必须逐个事实匹配证据清单中的字段路径与值哈希，不能凭常识编造属性。
+评分规则固定为 `STRONG=10`、`ADEQUATE=7`、`WEAK=3`，只对已评估维度求平均并保留一位小数；七维齐全为 `FULL/structurally_comparable=true`，五或六维为 `PARTIAL`，少于五维为 `NOT_SCORED`。两个分数只有在同为 `FULL` 且 `comparison_cohort_sha256` 一致时才允许比较；单份报告不自称“已可比”。高平均分不会隐藏 `WEAK` 维度。存在适用于当前 Listing/候选的官方错误、证据异常或警告时，它优先成为首要原因与行动。语义评估必须绑定目标内容、Locale、时间与官方报告哈希，且每个维度满足对应证据政策。默认简洁行动由维度映射为稳定 code，不直接展示可能带未绑定事实的自由模型文案。精确改写只能用已绑定原始标量值与标点/空格确定性组装；容量单位等事实也必须单独绑定。
 
 相关契约：
 

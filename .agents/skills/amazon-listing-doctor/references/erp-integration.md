@@ -70,4 +70,4 @@ Recommended statuses are `FRESH`, `STALE_WITHIN_GRACE`, and `UNAVAILABLE`. A ref
 - The diagnostic workflow never calls the real update adapter.
 - A production integration should add authorization, preview, idempotency, audit history, rate limiting, and post-submission verification outside this repository.
 - Store secrets in the integrating system, never in this public repository or diagnostic JSON fixtures.
-- Keep private Golden Dataset records outside the checkout. `scripts/evaluate_batch.py` emits aggregate, identifier-safe regression results.
+- Keep private observation and Golden Dataset records outside the checkout. `scripts/evaluate_batch.py` emits aggregate results plus non-identifying row indexes by default; use a private HMAC key only when stable cross-run references are necessary.

@@ -12,6 +12,6 @@
 
 ## Calibration set
 
-Maintain private, expert-reviewed examples for each production locale. Include clearly good, borderline, and weak content plus expected evidence citations. Record `assessment_model`, `prompt_version`, `assessment_version`, and `assessed_at` for every run. A model or prompt change must be compared against this set before unattended use.
+Maintain private, expert-reviewed examples for each production locale. Include clearly good, borderline, and weak content plus expected evidence citations. Record `assessment_model`, `prompt_version`, `assessment_version`, `evidence_policy_version`, `assessment_locale`, `assessed_at`, and the derived `comparison_cohort_sha256` for every run. A model, prompt, policy, or locale change starts a new comparison cohort and must be evaluated against the reviewed set before unattended use.
 
 Localization quality is `HEURISTIC_ADVICE`; it never becomes an Amazon official error without a bound Amazon issue or PTD validation result.
