@@ -796,6 +796,36 @@ def primary_recommendation(
     return recommendation
 
 
+def build_change_preview(
+        assessment: dict[str, Any], reason: dict[str, Any] | None,
+        action: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Expose only assessment-bound source values and a validated exact candidate."""
+    target_dimension = (
+        action.get("dimension") if isinstance(action, dict) else None
+    ) or (reason.get("dimension") if isinstance(reason, dict) else None)
+    dimension = (assessment.get("dimensions") or {}).get(target_dimension) \
+        if target_dimension else None
+    evidence = dimension.get("evidence") if isinstance(dimension, dict) else []
+    original_values = []
+    for row in evidence or []:
+        if not isinstance(row, dict):
+            continue
+        original_values.append({
+            "field_path": row.get("field_path"),
+            "value": copy.deepcopy(row.get("quote_or_value")),
+        })
+    candidate_value = action.get("suggested_value") \
+        if isinstance(action, dict) else None
+    return {
+        "dimension": target_dimension,
+        "attribute": action.get("attribute") if isinstance(action, dict) else None,
+        "original_values": original_values,
+        "candidate_value": copy.deepcopy(candidate_value),
+        "candidate_available": candidate_value is not None,
+    }
+
+
 def build_executive_summary(
         official_report: dict[str, Any], assessment: dict[str, Any], verdict: str,
 ) -> dict[str, Any]:
@@ -808,6 +838,7 @@ def build_executive_summary(
     score = derive_quality_score(
         assessment["dimensions"], assessment, scope, content_evidence
     )
+    change_preview = build_change_preview(assessment, quality_reason, quality_action)
     _, dimension_completeness = derive_quality(assessment["dimensions"])
     quality_completeness = combined_quality_completeness(
         dimension_completeness, content_evidence
@@ -820,7 +851,7 @@ def build_executive_summary(
         official_primary_action if official_blocker else quality_action or official_primary_action
     )
     summary = {
-        "summary_version": "1.2",
+        "summary_version": "1.3",
         "identity": {
             "marketplace_id": scope.get("marketplace_id"),
             "seller_sku": scope.get("sku"),
@@ -840,6 +871,7 @@ def build_executive_summary(
         "primary_action": operational_action,
         "quality_primary_reason": quality_reason,
         "quality_primary_action": quality_action,
+        "change_preview": change_preview,
         "official_primary_reason": official_reason,
         "official_primary_action": official_primary_action,
         "content_quality": {
@@ -849,6 +881,7 @@ def build_executive_summary(
             "evaluated_dimension_average": copy.deepcopy(score),
             "primary_reason": copy.deepcopy(quality_reason),
             "primary_action": copy.deepcopy(quality_action),
+            "change_preview": copy.deepcopy(change_preview),
         },
         "official_evidence": {
             "validation_completeness": official_report["official_validation_completeness"],

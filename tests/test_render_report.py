@@ -200,6 +200,9 @@ class RenderReportTest(unittest.TestCase):
         markdown = MODULE.render_concise_markdown(self.report(), "zh-CN")
         self.assertIn("内容证据范围: 买家前台可见内容", markdown)
         self.assertIn("内容证据覆盖: 本次目标范围已完整采集", markdown)
+        self.assertIn("| 目标字段 | 原始值 | 候选值 |", markdown)
+        self.assertIn("Example Brand Bottle", markdown)
+        self.assertIn("Example Brand Bottle, 24 oz", markdown)
 
     def test_all_static_engine_codes_have_chinese_titles(self):
         tree = ast.parse(DIAGNOSE.read_text(encoding="utf-8"))
@@ -227,9 +230,21 @@ class RenderReportTest(unittest.TestCase):
         self.assertIn("建议与证据", markdown)
         self.assertIn("限制与未评估项", markdown)
         self.assertIn("质量评估追踪", markdown)
-        self.assertIn("薄弱 (`WEAK`)", markdown)
-        self.assertIn("已绑定事实", markdown)
+        self.assertIn("| 状态 | 问题标题 | 稳定代码 | 证据来源 | Amazon/引擎原始信息 |", markdown)
+        self.assertIn("| 维度 | 评级 | 理由 | 证据 | 证据政策 | 缺失证据 |", markdown)
+        self.assertIn("| 优先级 | 维度 | 目标字段 | 原始值 | 候选值 |", markdown)
+        self.assertIn("候选值事实绑定", markdown)
         self.assertIn("$.current_content.attributes.capacity[0].value", markdown)
+
+    def test_missing_exact_candidate_is_explicit(self):
+        report = self.report()
+        report["semantic_assessment"]["recommendations"] = []
+        report["official_report_sha256"] = official_report_sha256(report)
+        report["semantic_assessment"]["official_report_sha256"] = report[
+            "official_report_sha256"
+        ]
+        markdown = MODULE.render_markdown(report, "zh-CN")
+        self.assertIn("暂未生成候选值（需先补证据或人工确认）", markdown)
 
     def test_default_markdown_is_concise_operational_summary(self):
         markdown = MODULE.render_markdown(self.report(), "zh-CN")

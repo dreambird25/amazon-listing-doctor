@@ -178,7 +178,7 @@ The concise default action does not repeat free model prose. `merge_report.py` m
 
 ## Separate content and official-evidence summaries
 
-`executive_summary.content_quality` contains the quality verdict, evidence completeness, score, reason, and action. `executive_summary.official_evidence` contains official validation completeness, coverage, reason, and action. The compatibility fields `quality_primary_reason` / `quality_primary_action` and `official_primary_reason` / `official_primary_action` mirror those lanes.
+`executive_summary.content_quality` contains the quality verdict, evidence completeness, score, reason, action, and `change_preview`. The preview copies the selected dimension's manifest-bound original values and exposes an exact candidate only when the recommendation's validated deterministic template produced one. If it did not, `candidate_available=false`; renderers must state that no candidate has been generated rather than filling the gap with free text. `executive_summary.official_evidence` contains official validation completeness, coverage, reason, and action. The compatibility fields `quality_primary_reason` / `quality_primary_action` and `official_primary_reason` / `official_primary_action` mirror those lanes.
 
 For a merged quality report, missing, stale, or untraceable official evidence never replaces the content-quality reason. An applicable `OFFICIAL_ERROR` may remain the compatibility `primary_reason` because it blocks the operational workflow, but the renderer still displays both lanes. If no quality dimension was evaluated, the official reason remains the only available primary reason.
 

@@ -11,7 +11,9 @@
     "recommendations": "Recommendations and evidence",
     "limitations": "Limitations and untested areas",
     "quality_trace": "Quality assessment trace",
-    "original_message": "Original message"
+    "original_message": "Original message",
+    "change_preview": "Original and candidate values",
+    "fact_bindings": "Candidate fact bindings"
   },
   "fields": {
     "current_listing": "Current Listing",
@@ -39,6 +41,10 @@
     "official_primary_action": "Official-evidence action",
     "official_incomplete_note": "Incomplete official evidence means Amazon's current state is unconfirmed; it does not mean the Listing content is incomplete.",
     "suggested_value": "Suggested value",
+    "target_field": "Target field",
+    "original_value": "Original value",
+    "candidate_value": "Candidate value",
+    "candidate_not_generated": "No candidate generated yet (evidence or human review required)",
     "completion_criterion": "Completion criterion",
     "score_disclaimer": "Internal heuristic score, not an Amazon official score",
     "not_scored": "Not scored",
@@ -50,6 +56,11 @@
     "yes": "Yes",
     "no": "No",
     "rating": "Rating",
+    "status": "Status",
+    "finding_title": "Finding title",
+    "code": "Stable code",
+    "source": "Evidence source",
+    "original_message": "Original message",
     "rationale": "Rationale",
     "evidence": "Evidence",
     "missing_evidence": "Missing evidence",

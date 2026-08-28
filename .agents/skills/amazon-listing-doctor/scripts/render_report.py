@@ -38,6 +38,31 @@ def label(messages: dict[str, Any], group: str, value: Any) -> str:
     return str(messages.get(group, {}).get(stable) or stable)
 
 
+def markdown_cell(value: Any) -> str:
+    """Render one value inside a compact Markdown table cell."""
+    if value is None or value == "":
+        return "-"
+    text = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) \
+        else str(value)
+    return (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("|", "\\|").replace("\r\n", "<br>").replace("\n", "<br>")
+    )
+
+
+def evidence_values(
+        rows: Any, *, include_paths: bool = False,
+) -> str:
+    rendered = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        value = markdown_cell(row.get("quote_or_value", row.get("value")))
+        path = markdown_cell(row.get("field_path"))
+        rendered.append(f"`{path}` = {value}" if include_paths and path != "-" else value)
+    return "<br>".join(rendered) or "-"
+
+
 def localize_report(report: Any, locale: str) -> dict[str, Any]:
     if not isinstance(report, dict):
         raise ValueError("report must be a JSON object")
@@ -106,7 +131,7 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
         "content_coverage": content_evidence.get("coverage"),
     }
     result = {
-        "summary_version": "1.2",
+        "summary_version": "1.3",
         "identity": {
             "marketplace_id": scope.get("marketplace_id"),
             "seller_sku": scope.get("sku"),
@@ -126,6 +151,13 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
         "primary_action": official_primary_action,
         "quality_primary_reason": None,
         "quality_primary_action": None,
+        "change_preview": {
+            "dimension": None,
+            "attribute": None,
+            "original_values": [],
+            "candidate_value": None,
+            "candidate_available": False,
+        },
         "official_primary_reason": official_reason,
         "official_primary_action": official_primary_action,
         "content_quality": {
@@ -135,6 +167,13 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
             "evaluated_dimension_average": copy.deepcopy(score),
             "primary_reason": None,
             "primary_action": None,
+            "change_preview": {
+                "dimension": None,
+                "attribute": None,
+                "original_values": [],
+                "candidate_value": None,
+                "candidate_available": False,
+            },
         },
         "official_evidence": {
             "validation_completeness": report.get("official_validation_completeness"),
@@ -169,6 +208,7 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
     quality_action = summary.get("quality_primary_action") or {}
     official_reason = summary.get("official_primary_reason") or {}
     official_primary_action = summary.get("official_primary_action") or {}
+    change_preview = summary.get("change_preview") or {}
 
     def reason_text(value: dict[str, Any], fallback: str) -> str:
         result = str(value.get("text") or fallback)
@@ -221,6 +261,11 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
                 if quality_action.get("completion_code")
                 else quality_action.get("completion_criterion")
             ),
+            "candidate_value": (
+                change_preview.get("candidate_value")
+                if change_preview.get("candidate_available")
+                else messages["fields"]["candidate_not_generated"]
+            ),
         },
     }
 
@@ -236,6 +281,7 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
     quality_action = summary.get("quality_primary_action") or {}
     official_reason = summary.get("official_primary_reason") or {}
     official_primary_action = summary.get("official_primary_action") or {}
+    change_preview = summary.get("change_preview") or {}
     identity = summary.get("identity") or {}
     weak_dimensions = score.get("weak_dimensions") or []
     weak_display = ", ".join(
@@ -271,13 +317,15 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
         f"### {fields['content_primary_action']}",
         "",
         str(display["content_primary_action"]),
+        "",
+        f"### {headings['change_preview']}",
+        "",
+        f"| {fields['target_field']} | {fields['original_value']} | {fields['candidate_value']} |",
+        "|---|---|---|",
+        f"| {markdown_cell(change_preview.get('attribute') or label(messages, 'dimension_labels', change_preview.get('dimension')))} "
+        f"| {evidence_values(change_preview.get('original_values'))} "
+        f"| {markdown_cell(display['candidate_value'])} |",
     ]
-    if quality_action.get("suggested_value"):
-        suggested_label = (
-            f"{fields['suggested_value']}：" if locale == "zh-CN"
-            else f"{fields['suggested_value']}:"
-        )
-        lines.extend(["", suggested_label, "", f"> {quality_action['suggested_value']}"])
     quality_completion = display.get("completion_criterion")
     if quality_completion:
         lines.extend(["", f"- {fields['completion_criterion']}: {quality_completion}"])
@@ -331,77 +379,94 @@ def render_detailed_markdown(report: dict[str, Any], locale: str) -> str:
     messages = load_messages(locale)
     headings = messages["headings"]
     fields = messages["fields"]
-    lines = [render_concise_markdown(report, locale).rstrip(), "", f"## {headings['official_findings']}", ""]
+    lines = [
+        render_concise_markdown(report, locale).rstrip(),
+        "", f"## {headings['official_findings']}", "",
+        f"| {fields['status']} | {fields['finding_title']} | {fields['code']} | "
+        f"{fields['source']} | {headings['original_message']} |",
+        "|---|---|---|---|---|",
+    ]
     findings = localized.get("findings") or []
     if not findings:
-        lines.append(f"- {fields['none']}")
+        lines.append(f"| {fields['none']} | - | - | - | - |")
     for row in findings:
-        lines.extend([
-            f"- **{row.get('status_label')} · {row.get('title_display')}** "
-            f"(`{row.get('code')}` / `{row.get('source')}`)",
-            f"  - {headings['original_message']}: {row.get('message_original')}",
-        ])
+        lines.append(
+            f"| {markdown_cell(row.get('status_label'))} "
+            f"| {markdown_cell(row.get('title_display'))} "
+            f"| `{markdown_cell(row.get('code'))}` "
+            f"| `{markdown_cell(row.get('source'))}` "
+            f"| {markdown_cell(row.get('message_original'))} |"
+        )
 
     assessment = report.get("semantic_assessment")
     assessment_errors = validate_assessment(assessment, report)
     if not assessment_errors:
         policy, _ = evaluate_evidence_policy(assessment, report)
         policy_dimensions = policy["dimensions"]
-        lines.extend(["", f"## {headings['quality_dimensions']}", ""])
+        lines.extend([
+            "", f"## {headings['quality_dimensions']}", "",
+            f"| {fields['dimension']} | {fields['rating']} | {fields['rationale']} | "
+            f"{fields['evidence']} | {fields['evidence_policy']} | {fields['missing_evidence']} |",
+            "|---|---|---|---|---|---|",
+        ])
         for name, row in assessment["dimensions"].items():
             dimension_label = label(messages, "dimension_labels", name)
+            dimension_policy = policy_dimensions.get(name) \
+                if isinstance(policy_dimensions, dict) else None
+            policy_text = "-"
+            if isinstance(dimension_policy, dict):
+                policy_text = (
+                    f"`{markdown_cell(dimension_policy.get('rule_code'))}` / "
+                    f"{'PASS' if dimension_policy.get('passed') else 'FAIL'}"
+                )
             lines.append(
-                f"- **{dimension_label}** (`{name}`): "
-                f"{label(messages, 'quality_labels', row.get('rating'))} (`{row.get('rating')}`)"
+                f"| {markdown_cell(dimension_label)} "
+                f"| {markdown_cell(label(messages, 'quality_labels', row.get('rating')))} "
+                f"| {markdown_cell(row.get('rationale'))} "
+                f"| {evidence_values(row.get('evidence'), include_paths=True)} "
+                f"| {policy_text} "
+                f"| {markdown_cell('; '.join(str(item) for item in row.get('missing_evidence') or []))} |"
             )
-            if row.get("rationale"):
-                lines.append(f"  - {fields['rationale']}: {row['rationale']}")
-            policy = policy_dimensions.get(name) if isinstance(policy_dimensions, dict) else None
-            if isinstance(policy, dict):
-                lines.append(
-                    f"  - {fields['evidence_policy']}: `{policy.get('rule_code')}` "
-                    f"({'PASS' if policy.get('passed') else 'FAIL'})"
-                )
-            for evidence in row.get("evidence") or []:
-                lines.append(
-                    f"  - {fields['evidence']}: `{evidence.get('field_path')}` = "
-                    f"{evidence.get('quote_or_value')}"
-                )
-            if row.get("missing_evidence"):
-                lines.append(
-                    f"  - {fields['missing_evidence']}: "
-                    + "; ".join(str(item) for item in row["missing_evidence"])
-                )
 
-        lines.extend(["", f"## {headings['recommendations']}", ""])
+        lines.extend([
+            "", f"## {headings['recommendations']}", "",
+            f"| {fields['priority']} | {fields['dimension']} | {fields['target_field']} | "
+            f"{fields['original_value']} | {fields['candidate_value']} | "
+            f"{fields['primary_action']} | {fields['completion_criterion']} |",
+            "|---|---|---|---|---|---|---|",
+        ])
         recommendations = assessment.get("recommendations") or []
         if not recommendations:
-            lines.append(f"- {fields['none']}")
+            lines.append(f"| - | - | - | - | {fields['candidate_not_generated']} | {fields['none']} | - |")
         for recommendation in recommendations:
             suggested_value = render_suggested_template(recommendation)
+            dimension = (assessment.get("dimensions") or {}).get(
+                recommendation.get("dimension")
+            ) or {}
+            original = evidence_values(dimension.get("evidence"), include_paths=True)
+            candidate = suggested_value or fields["candidate_not_generated"]
             lines.append(
-                f"- **{recommendation.get('priority')} · "
-                f"{label(messages, 'dimension_labels', recommendation.get('dimension'))}**: "
-                f"{recommendation.get('action')}"
+                f"| {markdown_cell(recommendation.get('priority'))} "
+                f"| {markdown_cell(label(messages, 'dimension_labels', recommendation.get('dimension')))} "
+                f"| {markdown_cell(recommendation.get('attribute'))} "
+                f"| {original} "
+                f"| {markdown_cell(candidate)} "
+                f"| {markdown_cell(recommendation.get('action'))} "
+                f"| {markdown_cell(recommendation.get('completion_criterion'))} |"
             )
-            if recommendation.get("attribute"):
-                lines.append(f"  - {fields['attribute']}: `{recommendation['attribute']}`")
-            if recommendation.get("current_problem"):
-                lines.append(f"  - {fields['current_problem']}: {recommendation['current_problem']}")
-            for binding in recommendation.get("fact_bindings") or []:
-                lines.append(
-                    f"  - {fields['bound_fact']}: `{binding.get('binding_id')}` = "
-                    f"{binding.get('source_value')} ← `{binding.get('source_path')}` "
-                    f"(`{binding.get('source_value_sha256')}`)"
-                )
-            if suggested_value:
-                lines.append(
-                    f"  - {fields['suggested_value']}: {suggested_value}"
-                )
-            lines.append(
-                f"  - {fields['completion_criterion']}: "
-                f"{recommendation.get('completion_criterion')}"
-            )
+
+        bindings = [
+            (recommendation, binding)
+            for recommendation in recommendations
+            for binding in recommendation.get("fact_bindings") or []
+        ]
+        if bindings:
+            lines.extend(["", f"### {headings['fact_bindings']}", ""])
+            lines.extend([
+                f"- `{binding.get('binding_id')}` = {binding.get('source_value')} "
+                f"← `{binding.get('source_path')}` (`{binding.get('source_value_sha256')}`)"
+                for _, binding in bindings
+            ])
 
         lines.extend(["", f"## {headings['limitations']}", ""])
         limitations = assessment.get("limitations") or []

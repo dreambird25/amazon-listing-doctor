@@ -540,6 +540,15 @@ class MergeReportTest(unittest.TestCase):
         action = merged["executive_summary"]["primary_action"]
         self.assertEqual("Example Brand Bottle, 24 oz", action["suggested_value"])
         self.assertTrue(action["rewrite_is_advisory"])
+        preview = merged["executive_summary"]["change_preview"]
+        self.assertEqual("item_name", preview["attribute"])
+        self.assertTrue(preview["candidate_available"])
+        self.assertEqual("Example Brand Bottle, 24 oz", preview["candidate_value"])
+        self.assertTrue(any(
+            row["field_path"] == "$.current_content.title"
+            and row["value"] == "Example Brand Bottle"
+            for row in preview["original_values"]
+        ))
 
     def test_suggested_rewrite_rejects_unverified_source_value(self):
         assessment = self.assessment("ADEQUATE")
@@ -735,7 +744,7 @@ class MergeReportTest(unittest.TestCase):
 
         self.assertTrue(valid)
         summary = merged["executive_summary"]
-        self.assertEqual("1.2", summary["summary_version"])
+        self.assertEqual("1.3", summary["summary_version"])
         self.assertEqual(
             "clarity_and_readability", summary["primary_reason"]["dimension"]
         )

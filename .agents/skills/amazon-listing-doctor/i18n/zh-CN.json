@@ -11,7 +11,9 @@
     "recommendations": "建议与证据",
     "limitations": "限制与未评估项",
     "quality_trace": "质量评估追踪",
-    "original_message": "Amazon/引擎原始信息"
+    "original_message": "Amazon/引擎原始信息",
+    "change_preview": "原始值与候选值",
+    "fact_bindings": "候选值事实绑定"
   },
   "fields": {
     "current_listing": "当前 Listing",
@@ -39,6 +41,10 @@
     "official_primary_action": "官方证据行动",
     "official_incomplete_note": "官方证据未完成只表示尚不能确认 Amazon 当前状态，不代表 Listing 内容不完整。",
     "suggested_value": "建议改为",
+    "target_field": "目标字段",
+    "original_value": "原始值",
+    "candidate_value": "候选值",
+    "candidate_not_generated": "暂未生成候选值（需先补证据或人工确认）",
     "completion_criterion": "完成标准",
     "score_disclaimer": "内部启发式评分，非 Amazon 官方评分",
     "not_scored": "未评分",
@@ -50,6 +56,11 @@
     "yes": "是",
     "no": "否",
     "rating": "评级",
+    "status": "状态",
+    "finding_title": "问题标题",
+    "code": "稳定代码",
+    "source": "证据来源",
+    "original_message": "原始信息",
     "rationale": "理由",
     "evidence": "证据",
     "missing_evidence": "缺失证据",
