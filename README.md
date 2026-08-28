@@ -2,7 +2,7 @@
 
 一个可直接被 Codex 发现的 Amazon Listing 诊断 Skill。它把 Amazon 官方证据、内容质量判断、缺失数据和系统异常分开，生成可追溯、可复核的报告。
 
-这是 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的公共 Fork，不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
+本项目基于 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的 MIT 开源版本演进，现作为独立仓库维护。完整 Git 历史继续保留以追溯来源；原项目版权与许可声明保留在 [`LICENSE`](LICENSE)，修改与新增代码的归属说明见 [`NOTICE.md`](NOTICE.md)。仓库不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
 当前版本：**v1.5.0**。本版将内容质量结论与 Amazon 官方证据状态拆成两个独立摘要，避免把快照缺失、时效或追踪字段不足误写成 Listing 内容不完整；适用的官方错误仍会明确阻断操作，详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
@@ -154,4 +154,4 @@ python scripts/quick_validate.py
 
 ## 许可证与归属
 
-本 Fork 沿用 MIT License，保留原项目 `Buluu@新西楼` 的版权与归属，详见 [`LICENSE`](LICENSE)。
+本项目沿用 MIT License，保留原项目 `Buluu@新西楼` 的版权与归属，并登记 `dreambird25` 及贡献者对后续修改与新增代码的版权，详见 [`LICENSE`](LICENSE) 与 [`NOTICE.md`](NOTICE.md)。
