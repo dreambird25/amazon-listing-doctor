@@ -193,6 +193,139 @@ class MergeReportTest(unittest.TestCase):
         self.assertEqual("SYSTEM_ERROR", merged["merge_status"])
         self.assertTrue(any("content_completeness requires manifest-bound evidence" in error for error in merged["errors"]))
 
+    def test_encoding_defect_claim_requires_suspicious_bound_text(self):
+        assessment = self.assessment("ADEQUATE")
+        assessment["dimensions"]["clarity_and_readability"].update({
+            "rating": "WEAK",
+            "rationale": "The visible bullet contains a replacement character or encoding artifact.",
+        })
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertEqual("SYSTEM_ERROR", merged["merge_status"])
+        self.assertTrue(any(
+            "encoding defect claim requires suspicious bound text" in error
+            for error in merged["errors"]
+        ))
+
+    def test_negated_defect_statements_do_not_require_suspicious_text(self):
+        rationales = (
+            "No replacement character or encoding issue is present.",
+            "The text contains no debug log or stack trace residue.",
+            "The title is free of encoding issues.",
+            "未发现乱码或替换字符。",
+        )
+        for rationale in rationales:
+            with self.subTest(rationale=rationale):
+                assessment = self.assessment("STRONG")
+                assessment["dimensions"]["clarity_and_readability"]["rationale"] = rationale
+                merged, valid = MODULE.merge_report(self.official_report(), assessment)
+                self.assertTrue(valid, merged.get("errors"))
+
+    def test_negation_scope_does_not_hide_affirmative_defect_claim(self):
+        rationales = (
+            "No title issue, but an encoding issue exists in the bullet.",
+            "标题无问题，但要点有乱码。",
+            "The bullet is not free of encoding issues.",
+        )
+        for rationale in rationales:
+            with self.subTest(rationale=rationale):
+                assessment = self.assessment("ADEQUATE")
+                assessment["dimensions"]["clarity_and_readability"].update({
+                    "rating": "WEAK",
+                    "rationale": rationale,
+                })
+                merged, valid = MODULE.merge_report(self.official_report(), assessment)
+                self.assertFalse(valid)
+                self.assertEqual("SYSTEM_ERROR", merged["merge_status"])
+
+    def test_legitimate_multilingual_characters_are_not_mojibake(self):
+        self.assertFalse(MODULE.suspicious_bound_text("SÃO TOMÉ – ÂNGULO"))
+
+    def test_common_mojibake_and_tab_are_detected(self):
+        self.assertTrue(MODULE.suspicious_bound_text("SÃ£o"))
+        self.assertTrue(MODULE.suspicious_bound_text("visible\ttext"))
+
+    def test_documented_defect_claims_require_matching_bound_evidence(self):
+        rationales = (
+            "The bullet contains a control character.",
+            "The bullet contains an exception trace.",
+        )
+        for rationale in rationales:
+            with self.subTest(rationale=rationale):
+                assessment = self.assessment("ADEQUATE")
+                assessment["dimensions"]["clarity_and_readability"].update({
+                    "rating": "WEAK",
+                    "rationale": rationale,
+                })
+                merged, valid = MODULE.merge_report(self.official_report(), assessment)
+                self.assertFalse(valid)
+                self.assertEqual("SYSTEM_ERROR", merged["merge_status"])
+
+    def test_native_reviewer_absence_is_not_missing_listing_evidence(self):
+        assessment = self.assessment("ADEQUATE")
+        assessment["dimensions"]["localization_quality"] = {
+            "rating": "NOT_EVALUATED",
+            "rationale": "",
+            "evidence": [],
+            "missing_evidence": ["A native German reviewer is unavailable."],
+        }
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertEqual("SYSTEM_ERROR", merged["merge_status"])
+        self.assertTrue(any(
+            "native reviewer absence is not missing Listing evidence" in error
+            for error in merged["errors"]
+        ))
+
+    def test_encoding_defect_claim_accepts_actual_replacement_character(self):
+        report = self.official_report()
+        report["quality_contexts"]["CURRENT"] = build_quality_context(
+            "CURRENT", report["scope"], {
+                "title": "Example Brand Bottle",
+                "bullets": ["Leak-resistant lid \ufffd for daily use."],
+                "description": "A reusable bottle for commuting and workouts.",
+                "images": [{"url": "https://example.invalid/main.jpg", "is_main": True}],
+                "attributes": {"capacity": [{"value": 24, "unit": "oz"}]},
+            },
+        )
+        report["official_report_sha256"] = official_report_sha256(report)
+        assessment = self.assessment("ADEQUATE", report=report)
+        for name in MODULE.DIMENSIONS:
+            if name != "clarity_and_readability":
+                assessment["dimensions"][name] = {
+                    "rating": "NOT_EVALUATED",
+                    "rationale": "",
+                    "evidence": [],
+                    "missing_evidence": ["not needed for this focused test"],
+                }
+        value = "Leak-resistant lid \ufffd for daily use."
+        assessment["dimensions"]["clarity_and_readability"] = {
+            "rating": "WEAK",
+            "rationale": "The visible bullet contains a replacement character.",
+            "evidence": [{
+                "field_path": "$.current_content.bullets[0]",
+                "quote_or_value": value,
+                "value_sha256": sha256_json(value),
+            }],
+            "missing_evidence": [],
+        }
+        merged, valid = MODULE.merge_report(report, assessment)
+        self.assertTrue(valid, merged.get("errors"))
+
+    def test_debug_artifact_claim_requires_technical_artifact_evidence(self):
+        assessment = self.assessment("ADEQUATE")
+        assessment["dimensions"]["clarity_and_readability"].update({
+            "rating": "WEAK",
+            "rationale": "The fifth bullet contains a debug stack trace residue.",
+        })
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertEqual("SYSTEM_ERROR", merged["merge_status"])
+        self.assertTrue(any(
+            "technical artifact claim requires suspicious bound text" in error
+            for error in merged["errors"]
+        ))
+
     def test_all_dimensions_are_required(self):
         assessment = self.assessment()
         assessment["dimensions"].pop("buyer_question_coverage")

@@ -8,7 +8,8 @@
 - Preserve Unicode text. Do not treat code points, UTF-8 bytes, words, or visual width as interchangeable; use only the unit declared by PTD evidence.
 - Judge localization from supplied marketplace evidence: language consistency, natural phrasing, units, decimal conventions, compatibility terminology, and buyer comprehension.
 - Do not apply English sentence length, capitalization, punctuation, keyword-density, or word-boundary heuristics to German, French, Italian, Spanish, Dutch, Polish, Swedish, Japanese, or other locales.
-- If the assessor cannot competently judge the supplied language, return `localization_quality=NOT_EVALUATED` and name the missing reviewer/model capability.
+- If the assessor can understand the supplied language, perform the basic localization review from bound text. The absence of a separate native human reviewer is a limitation, not missing Listing evidence; do not use it alone to return `localization_quality=NOT_EVALUATED`.
+- If the assessor genuinely cannot understand the supplied language, return `localization_quality=NOT_EVALUATED` and name the missing model language capability. A publication-grade native review may still be recommended as an optional final check without erasing the model's evidence-based basic assessment.
 
 ## Calibration set
 

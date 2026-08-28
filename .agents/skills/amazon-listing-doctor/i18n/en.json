@@ -103,6 +103,7 @@
   },
   "action_codes": {
     "FIX_OFFICIAL_BLOCKER_AND_REVALIDATE": "Fix the official Amazon error first, then rerun complete validation.",
+    "RECHECK_CURRENT_ISSUE_AFTER_PREVIEW_PASS": "Do not keep changing the field that passed this Preview solely because the historical issue remains; handle other candidate checks separately. Refresh the current Listing issues and confirm the historical issue no longer returns.",
     "REVIEW_OFFICIAL_EVIDENCE": "Complete or review the official evidence before deciding whether to release.",
     "COMPLETE_MISSING_CONTENT_EVIDENCE": "Complete the missing content evidence before optimizing the Listing.",
     "IMPROVE_CLARITY_WITH_BOUND_FACTS": "Improve clarity using only facts bound to the assessed Listing.",
@@ -114,6 +115,7 @@
   },
   "completion_codes": {
     "OFFICIAL_BLOCKER_CLEARED": "The official error is absent and the candidate Preview and applicable PTD validation are complete.",
+    "CURRENT_ISSUE_ABSENT_AFTER_RECHECK": "The refreshed current Listing issues no longer contain this error.",
     "OFFICIAL_EVIDENCE_COMPLETED": "Official evidence is complete and the release decision is no longer unknown or not evaluated.",
     "REASSESS_QUALITY_DIMENSION_WITH_BOUND_EVIDENCE": "Re-run the bound assessment and confirm the target dimension is no longer weak or unassessed."
   },

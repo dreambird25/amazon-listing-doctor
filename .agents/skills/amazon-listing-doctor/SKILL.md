@@ -4,7 +4,7 @@ description: "Diagnose Amazon seller Listings from JSON, Excel/CSV exports, or p
 license: MIT
 metadata:
   category: ecommerce/amazon
-  version: 1.5.2
+  version: 1.5.3
   upstream: buluslan/amazon-listing-doctor
 ---
 
@@ -39,14 +39,14 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
      --semantic-assessment semantic-assessment.json
    ```
 
-   This step is complete when the assessment uses `assessment_version=1.3`, selects `CURRENT` or `CANDIDATE`, binds the scope/content/official-report/evidence-manifest hashes emitted by the deterministic engine, matches the Listing locale and evidence time, includes all seven dimensions, satisfies the dimension-specific Evidence Policy, and the merge script returns `merge_status=OK`. Use the script-derived verdict and `executive_summary.evaluated_dimension_average`; do not invent or override a score. Five or six evaluated dimensions produce `PARTIAL`. Seven produce structurally complete `FULL`, but two scores are comparable only when both are `FULL` and have the same `comparison_cohort_sha256`. The score is an internal heuristic, never an Amazon score or performance prediction.
+   This step is complete when the assessment uses `assessment_version=1.3`, selects `CURRENT` or `CANDIDATE`, binds the scope/content/official-report/evidence-manifest hashes emitted by the deterministic engine, matches the Listing locale and evidence time, includes all seven dimensions, satisfies the dimension-specific Evidence Policy, and the merge script returns `merge_status=OK`. A named text defect must be demonstrated by its bound value: never infer an encoding or replacement-character problem from a normal field, and keep character/byte limits separate from readability. Assess basic localization whenever the assessor understands the scoped language; lack of a separate native human reviewer is a limitation, not missing Listing evidence. Use the script-derived verdict and `executive_summary.evaluated_dimension_average`; do not invent or override a score. Five or six evaluated dimensions produce `PARTIAL`. Seven produce structurally complete `FULL`, but two scores are comparable only when both are `FULL` and have the same `comparison_cohort_sha256`. The score is an internal heuristic, never an Amazon score or performance prediction.
 5. Render in the user's language. `scope.locale` controls Listing evidence; `report_locale` controls display and must never change validation. The default concise user view shows localized conclusions only; do not expose stable status/error codes or Amazon's original foreign-language message there. Preserve those machine fields in the separate detailed audit view. For Chinese Markdown:
 
    ```bash
    python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown
    ```
 
-   The default view contains two explicit sections: content quality and Amazon official-evidence status. Content score, verdict, reason, action, and optional suggested value come only from the quality lane. Missing, stale, or untraceable official evidence stays in the official section and must not be described as incomplete Listing content. An applicable `OFFICIAL_ERROR` remains an operational blocker and is always shown in the official section. Use `--view detailed` when the user asks for findings or audit evidence:
+   The default view contains two explicit sections: content quality and Amazon official-evidence status. Content score, verdict, reason, action, and optional suggested value come only from the quality lane. Missing, stale, or untraceable official evidence stays in the official section and must not be described as incomplete Listing content. An applicable `OFFICIAL_ERROR` remains an operational blocker and is always shown in the official section. When a bound candidate Preview passes while the current Listing snapshot still contains an error, show both facts: the candidate passed that Preview, but the current issue has not yet disappeared. Do not describe the candidate as still violating the same constraint; require a fresh post-submit/current-issues recheck. Use `--view detailed` when the user asks for findings or audit evidence:
 
    ```bash
    python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed

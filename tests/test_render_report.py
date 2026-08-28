@@ -366,6 +366,32 @@ class RenderReportTest(unittest.TestCase):
         self.assertIn("先修复上述 Amazon 官方错误", markdown)
         self.assertIn("标题没有清楚表达", markdown)
 
+    def test_preview_pass_with_historical_current_issue_requests_recheck(self):
+        report = self.report()
+        report["current_listing_gate"] = "BLOCK"
+        report["candidate_preview_gate"] = "PASS"
+        report["candidate_local_validation_gate"] = "PASS"
+        report["release_decision"] = "REVIEW"
+        report["release_reasons"] = ["CURRENT_LISTING_HAS_HISTORICAL_BLOCKERS"]
+        report["findings"] = [{
+            "status": "OFFICIAL_ERROR",
+            "code": "OFFICIAL_ISSUE",
+            "source": "LISTINGS_ITEMS",
+            "applies_to_current": True,
+            "applies_to_candidate": False,
+            "message": "The current Listing still returns the historical issue.",
+        }]
+        report["official_report_sha256"] = official_report_sha256(report)
+        report["semantic_assessment"]["official_report_sha256"] = report[
+            "official_report_sha256"
+        ]
+        markdown = MODULE.render_markdown(report, "zh-CN")
+        self.assertIn("候选预检: 候选预检通过", markdown)
+        self.assertIn("无需仅因这个历史问题继续修改已通过该预检的候选字段", markdown)
+        self.assertIn("其他候选校验仍需单独处理", markdown)
+        self.assertIn("重新获取当前 Listing 问题", markdown)
+        self.assertNotIn("先修复上述 Amazon 官方错误", markdown)
+
 
 if __name__ == "__main__":
     unittest.main()

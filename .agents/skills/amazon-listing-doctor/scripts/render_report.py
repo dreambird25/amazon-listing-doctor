@@ -75,7 +75,7 @@ def localize_report(report: Any, locale: str) -> dict[str, Any]:
 def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
     scope = report.get("scope") if isinstance(report.get("scope"), dict) else {}
     official_reason = primary_official_finding(report)
-    official_primary_action = official_action(official_reason)
+    official_primary_action = official_action(official_reason, report)
     score = {
         "status": "NOT_SCORED",
         "value": None,

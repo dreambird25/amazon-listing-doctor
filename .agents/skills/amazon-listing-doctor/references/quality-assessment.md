@@ -29,7 +29,7 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 {
   "assessment_version": "1.3",
   "assessment_model": "MODEL_IDENTIFIER",
-  "prompt_version": "quality-v1.5.0",
+  "prompt_version": "quality-v1.5.1",
   "assessed_at": "2026-01-01T00:00:00Z",
   "assessment_target": "CURRENT",
   "assessment_locale": "en_US",
@@ -81,6 +81,10 @@ Matching any manifest path is not enough. Each evaluated dimension must meet its
 | `image_information_coverage` | at least one `images[...]` path |
 | `cross_field_consistency` | evidence from at least two top-level content modules |
 | `localization_quality` | visible text and `assessment_locale == scope.locale` |
+
+Evidence must support the specific defect named in the rationale, not merely identify the field. A claim about a replacement character, mojibake, control character, encoding artifact, debug stack, exception trace, or log residue must bind text that actually contains the suspicious character or technical sequence. A normal title or bullet is not evidence for one of these claims. Keep code-point or byte-length validation separate from readability: passing a declared length limit neither proves nor disproves an independent text-quality defect.
+
+For `localization_quality`, perform a basic language and marketplace review whenever the assessor can understand the scoped language. Lack of a separate native human reviewer is a limitation for publication-grade review, not missing Listing evidence and not by itself a reason for `NOT_EVALUATED`. Use `NOT_EVALUATED` only when the assessor genuinely lacks language capability or the bound Listing lacks enough scoped visible text; state which of those is missing.
 
 `quality_evidence_policy` records each rule code and the non-sensitive module names used. A failed policy makes the merge fail; it is not downgraded to a warning.
 

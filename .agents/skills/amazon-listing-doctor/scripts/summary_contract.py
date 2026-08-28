@@ -86,20 +86,36 @@ def primary_official_finding(official_report: dict[str, Any]) -> dict[str, Any] 
     return None
 
 
-def official_action(reason: dict[str, Any] | None) -> dict[str, Any] | None:
+def official_action(
+    reason: dict[str, Any] | None,
+    official_report: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     if not reason:
         return None
     blocker = reason.get("status") == "OFFICIAL_ERROR"
+    historical_issue_after_preview_pass = bool(
+        blocker
+        and isinstance(official_report, dict)
+        and official_report.get("candidate_preview_gate") == "PASS"
+        and "CURRENT_LISTING_HAS_HISTORICAL_BLOCKERS"
+        in set(official_report.get("release_reasons") or [])
+    )
     return {
         "source": "OFFICIAL_EVIDENCE",
         "priority": "HIGH" if blocker else "MEDIUM",
         "action_code": (
-            "FIX_OFFICIAL_BLOCKER_AND_REVALIDATE"
-            if blocker else "REVIEW_OFFICIAL_EVIDENCE"
+            "RECHECK_CURRENT_ISSUE_AFTER_PREVIEW_PASS"
+            if historical_issue_after_preview_pass
+            else "FIX_OFFICIAL_BLOCKER_AND_REVALIDATE"
+            if blocker
+            else "REVIEW_OFFICIAL_EVIDENCE"
         ),
         "completion_code": (
-            "OFFICIAL_BLOCKER_CLEARED"
-            if blocker else "OFFICIAL_EVIDENCE_COMPLETED"
+            "CURRENT_ISSUE_ABSENT_AFTER_RECHECK"
+            if historical_issue_after_preview_pass
+            else "OFFICIAL_BLOCKER_CLEARED"
+            if blocker
+            else "OFFICIAL_EVIDENCE_COMPLETED"
         ),
         "finding_code": reason.get("code"),
         "rewrite_is_advisory": False,

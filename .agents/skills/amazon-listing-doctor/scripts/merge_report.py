@@ -7,6 +7,7 @@ import argparse
 import copy
 import json
 import math
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +46,75 @@ PRIORITIES_BY_RATING = {
     "NOT_EVALUATED": PRIORITIES,
 }
 ALLOWED_LITERAL_CHARACTERS = frozenset(" ,-–—/:()")
+ENCODING_CLAIM_MARKERS = (
+    "replacement character",
+    "encoding artifact",
+    "encoding issue",
+    "mojibake",
+    "unicode replacement",
+    "u+fffd",
+    "control character",
+    "non-printable character",
+    "异常替换字符",
+    "替换字符",
+    "编码痕迹",
+    "编码异常",
+    "乱码",
+    "控制字符",
+    "不可见字符",
+)
+SUSPICIOUS_TEXT_MARKERS = (
+    "\ufffd",
+    "ï¿½",
+    "Ã©",
+    "Ã¨",
+    "Ãª",
+    "Ã«",
+    "Ã¤",
+    "Ã¶",
+    "Ã¼",
+    "ÃŸ",
+    "Ã±",
+    "Ã¡",
+    "Ã£",
+    "Ã³",
+    "Ãº",
+    "Â©",
+    "Â®",
+    "Â°",
+    "â€",
+    "â€™",
+    "â€œ",
+    "ðŸ",
+)
+NATIVE_REVIEWER_MARKERS = (
+    "native reviewer",
+    "native-language reviewer",
+    "mother tongue reviewer",
+    "native speaker review",
+    "母语级审校",
+    "母语审校",
+    "母语审核",
+    "muttersprach",
+)
+TECHNICAL_ARTIFACT_CLAIM_MARKERS = (
+    "traceback",
+    "debug stack",
+    "stack trace",
+    "exception trace",
+    "exception stack",
+    "debug log",
+    "log residue",
+    "debug residue",
+    "调试堆栈",
+    "异常堆栈",
+    "异常跟踪",
+    "异常追踪",
+    "堆栈残留",
+    "日志残留",
+    "调试信息",
+    "调试文本",
+)
 QUALITY_ACTION_CODES = {
     "content_completeness": "COMPLETE_MISSING_CONTENT_EVIDENCE",
     "clarity_and_readability": "IMPROVE_CLARITY_WITH_BOUND_FACTS",
@@ -103,6 +173,96 @@ def parse_timestamp(value: Any) -> datetime | None:
 def scalar_value(value: Any) -> bool:
     return value is None or isinstance(value, (str, int, bool)) \
         or isinstance(value, float) and math.isfinite(value)
+
+
+def marker_is_negated(text: str, start: int, end: int) -> bool:
+    prefix = text[max(0, start - 80):start]
+    clause = re.split(
+        r"[.!?;,，。！？；\n]|\b(?:but|however|yet)\b|(?:但是|但|然而|不过)",
+        prefix,
+        flags=re.IGNORECASE,
+    )[-1]
+    suffix = text[end:end + 50]
+    affirmative_double_negative = re.search(
+        r"\bnot\s+free\s+of\b[^.!?;,\n]{0,32}$",
+        clause,
+    ) or re.search(
+        r"(?:并非|不是)没有[^，。！？；\n]{0,20}$",
+        clause,
+    )
+    if affirmative_double_negative:
+        return False
+    english_before = re.search(
+        r"(?:\b(?:no|not(?!\s+only)|without|none|never|neither|nor)\b"
+        r"|\bfree\s+of\b)[^.!?;\n]{0,48}$",
+        clause,
+    )
+    chinese_before = re.search(
+        r"(?:未发现|未见|没有|不存在|不含|无)[^。！？；\n]{0,24}$",
+        clause,
+    )
+    english_after = re.match(
+        r"^[^.!?;\n]{0,28}\b(?:is|are|was|were|does|do)?\s*"
+        r"(?:not present|absent|not found|not detected)\b",
+        suffix,
+    )
+    chinese_after = re.match(
+        r"^[^。！？；\n]{0,20}(?:不存在|未发现|未出现|没有|不含)",
+        suffix,
+    )
+    return bool(english_before or chinese_before or english_after or chinese_after)
+
+
+def text_asserts_marked_defect(value: Any, markers: tuple[str, ...]) -> bool:
+    if not nonempty_text(value):
+        return False
+    lowered = value.casefold()
+    for marker in markers:
+        normalized = marker.casefold()
+        start = lowered.find(normalized)
+        while start >= 0:
+            end = start + len(normalized)
+            if not marker_is_negated(lowered, start, end):
+                return True
+            start = lowered.find(normalized, end)
+    return False
+
+
+def text_claims_encoding_defect(value: Any) -> bool:
+    return text_asserts_marked_defect(value, ENCODING_CLAIM_MARKERS)
+
+
+def suspicious_bound_text(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    if any(marker in value for marker in SUSPICIOUS_TEXT_MARKERS):
+        return True
+    return any(ord(char) < 32 and char not in "\n\r" for char in value)
+
+
+def text_claims_technical_artifact(value: Any) -> bool:
+    return text_asserts_marked_defect(value, TECHNICAL_ARTIFACT_CLAIM_MARKERS)
+
+
+def suspicious_technical_text(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    patterns = (
+        r"traceback\s*\(most recent call last\)",
+        r"exception in thread",
+        r"(?:^|\n)\s*at\s+[\w.$]+\([^\n)]*:\d+\)",
+        r"\b(?:java\.lang|org\.springframework)\.",
+        r"\[(?:debug|error|warn|trace)\]",
+    )
+    return any(re.search(pattern, value, re.IGNORECASE) for pattern in patterns)
+
+
+def missing_evidence_requests_native_reviewer(values: Any) -> bool:
+    if not isinstance(values, list):
+        return False
+    text = " ".join(item for item in values if isinstance(item, str)).casefold()
+    return any(marker.casefold() in text for marker in NATIVE_REVIEWER_MARKERS) \
+        or bool(re.search(r"\bnative\b.{0,40}\breviewer\b", text))
 
 
 def render_bound_value(value: Any) -> str | None:
@@ -297,6 +457,11 @@ def validate_assessment(
                 errors.append(f"{name}.evidence must be empty when NOT_EVALUATED")
             if not any(nonempty_text(item) for item in missing_evidence):
                 errors.append(f"{name} requires missing_evidence when NOT_EVALUATED")
+            if name == "localization_quality" \
+                    and missing_evidence_requests_native_reviewer(missing_evidence):
+                errors.append(
+                    "localization_quality native reviewer absence is not missing Listing evidence"
+                )
         else:
             if not nonempty_text(row.get("rationale")):
                 errors.append(f"{name}.rationale is required for an evaluated rating")
@@ -307,6 +472,24 @@ def validate_assessment(
                 )
             if rating == "STRONG" and missing_evidence:
                 errors.append(f"{name}.missing_evidence must be empty when STRONG")
+            if name == "clarity_and_readability" \
+                    and text_claims_encoding_defect(row.get("rationale")) \
+                    and not any(
+                        suspicious_bound_text(item.get("quote_or_value"))
+                        for item in evidence if isinstance(item, dict)
+                    ):
+                errors.append(
+                    "clarity_and_readability encoding defect claim requires suspicious bound text"
+                )
+            if name == "clarity_and_readability" \
+                    and text_claims_technical_artifact(row.get("rationale")) \
+                    and not any(
+                        suspicious_technical_text(item.get("quote_or_value"))
+                        for item in evidence if isinstance(item, dict)
+                    ):
+                errors.append(
+                    "clarity_and_readability technical artifact claim requires suspicious bound text"
+                )
 
     assessed_evidence = {
         (item["field_path"].strip(), item["value_sha256"].lower())
@@ -550,7 +733,7 @@ def build_executive_summary(
     quality_reason = primary_quality_reason(assessment["dimensions"])
     quality_action = primary_recommendation(assessment.get("recommendations") or [], quality_reason)
     official_reason = primary_official_finding(official_report)
-    official_primary_action = official_action(official_reason)
+    official_primary_action = official_action(official_reason, official_report)
     score = derive_quality_score(assessment["dimensions"], assessment, scope)
     _, quality_completeness = derive_quality(assessment["dimensions"])
     official_blocker = bool(

@@ -103,6 +103,7 @@
   },
   "action_codes": {
     "FIX_OFFICIAL_BLOCKER_AND_REVALIDATE": "先修复上述 Amazon 官方错误，再重新运行完整校验。",
+    "RECHECK_CURRENT_ISSUE_AFTER_PREVIEW_PASS": "无需仅因这个历史问题继续修改已通过该预检的候选字段；其他候选校验仍需单独处理。请重新获取当前 Listing 问题，等待旧问题不再返回后再确认解决。",
     "REVIEW_OFFICIAL_EVIDENCE": "先补齐或复核上述官方证据，再决定是否发布。",
     "COMPLETE_MISSING_CONTENT_EVIDENCE": "先补齐缺失的内容证据，再优化 Listing。",
     "IMPROVE_CLARITY_WITH_BOUND_FACTS": "仅使用已绑定的 Listing 事实改善表达清晰度。",
@@ -114,6 +115,7 @@
   },
   "completion_codes": {
     "OFFICIAL_BLOCKER_CLEARED": "该官方错误不再出现，并完成候选预检与适用 PTD 校验。",
+    "CURRENT_ISSUE_ABSENT_AFTER_RECHECK": "重新获取的当前 Listing 问题中不再出现该错误。",
     "OFFICIAL_EVIDENCE_COMPLETED": "官方证据已补齐且发布决策不再是未知或未评估。",
     "REASSESS_QUALITY_DIMENSION_WITH_BOUND_EVIDENCE": "重新运行已绑定的质量评估，确认目标维度不再是薄弱或未评估。"
   },
