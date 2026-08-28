@@ -233,11 +233,22 @@ class RenderReportTest(unittest.TestCase):
         self.assertIn("内容质量", markdown)
         self.assertIn("Amazon 官方证据状态", markdown)
         self.assertIn("官方证据完整性", markdown)
-        self.assertIn("(`COMPLETE`)", markdown)
+        self.assertIn("官方证据完整性: 已完成", markdown)
         self.assertIn("标题没有清楚表达", markdown)
         self.assertIn("仅使用已绑定的 Listing 事实", markdown)
         self.assertIn("Example Brand Bottle, 24 oz", markdown)
         self.assertNotIn("PTD_CONSTRAINT_VIOLATION", markdown)
+
+    def test_chinese_concise_markdown_hides_machine_status_codes(self):
+        markdown = MODULE.render_markdown(self.report(), "zh-CN")
+        for machine_value in (
+            "NEEDS_IMPROVEMENT", "FULL", "NO_KNOWN_OFFICIAL_ISSUES",
+            "PASS", "COMPLETE", "PTD_CONSTRAINT_VIOLATION",
+        ):
+            self.assertNotIn(f"`{machine_value}`", markdown)
+        self.assertIn("内容质量结论: 需要优化", markdown)
+        self.assertIn("评分覆盖状态: 完整七维评分", markdown)
+        self.assertIn("当前 Listing: 未发现已知官方问题", markdown)
 
     def test_official_gap_is_separate_from_content_quality(self):
         report = self.report()

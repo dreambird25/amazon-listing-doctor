@@ -235,14 +235,13 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
         f"（{display['score_disclaimer']}）" if locale == "zh-CN" else
         f"- {fields['evaluated_dimension_average']}: {display['quality_score']} "
         f"({display['score_disclaimer']})",
-        f"- {fields['score_status']}: {display['score_status']} (`{score.get('status')}`)",
+        f"- {fields['score_status']}: {display['score_status']}",
         f"- {fields['dimensions']}: {score.get('evaluated_dimensions', 0)} / "
         f"{score.get('total_dimensions', 7)}",
         f"- {fields['weak_dimensions']}: {weak_display}",
         f"- {fields['structurally_comparable']}: "
         f"{fields['yes'] if score.get('structurally_comparable') else fields['no']}",
-        f"- {fields['quality_verdict']}: {display['quality_verdict']} "
-        f"(`{summary.get('quality_verdict')}`)",
+        f"- {fields['quality_verdict']}: {display['quality_verdict']}",
         "",
         f"### {fields['content_primary_reason']}",
         "",
@@ -266,24 +265,19 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
         "",
         f"## {headings['official_evidence']}",
         "",
-        f"- {fields['current_listing']}: {display['current_listing_gate']} "
-        f"(`{report.get('current_listing_gate')}`)",
+        f"- {fields['current_listing']}: {display['current_listing_gate']}",
     ])
     if report.get("release_decision") != "PASS" \
             or report.get("candidate_preview_gate") != "PASS" \
             or report.get("candidate_local_validation_gate") != "PASS":
         lines.extend([
-            f"- {fields['candidate_preview']}: {display['candidate_preview_gate']} "
-            f"(`{report.get('candidate_preview_gate')}`)",
-            f"- {fields['candidate_local_validation']}: {display['candidate_local_validation_gate']} "
-            f"(`{report.get('candidate_local_validation_gate')}`)",
+            f"- {fields['candidate_preview']}: {display['candidate_preview_gate']}",
+            f"- {fields['candidate_local_validation']}: {display['candidate_local_validation_gate']}",
         ])
     lines.extend([
-        f"- {fields['release_decision']}: {display['release_decision']} "
-        f"(`{report.get('release_decision')}`)",
+        f"- {fields['release_decision']}: {display['release_decision']}",
         f"- {fields['official_validation_completeness']}: "
-        f"{display['official_validation_completeness']} "
-        f"(`{report.get('official_validation_completeness')}`)",
+        f"{display['official_validation_completeness']}",
     ])
     if report.get("official_validation_completeness") != "COMPLETE":
         lines.extend(["", f"> {fields['official_incomplete_note']}"])

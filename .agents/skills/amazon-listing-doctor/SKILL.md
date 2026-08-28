@@ -4,7 +4,7 @@ description: "Diagnose Amazon seller Listings from JSON, Excel/CSV exports, or p
 license: MIT
 metadata:
   category: ecommerce/amazon
-  version: 1.5.0
+  version: 1.5.1
   upstream: buluslan/amazon-listing-doctor
 ---
 
@@ -40,7 +40,7 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
    ```
 
    This step is complete when the assessment uses `assessment_version=1.3`, selects `CURRENT` or `CANDIDATE`, binds the scope/content/official-report/evidence-manifest hashes emitted by the deterministic engine, matches the Listing locale and evidence time, includes all seven dimensions, satisfies the dimension-specific Evidence Policy, and the merge script returns `merge_status=OK`. Use the script-derived verdict and `executive_summary.evaluated_dimension_average`; do not invent or override a score. Five or six evaluated dimensions produce `PARTIAL`. Seven produce structurally complete `FULL`, but two scores are comparable only when both are `FULL` and have the same `comparison_cohort_sha256`. The score is an internal heuristic, never an Amazon score or performance prediction.
-5. Render in the user's language while preserving stable codes and Amazon's original message. `scope.locale` controls Listing evidence; `report_locale` controls display and must never change validation. For Chinese Markdown:
+5. Render in the user's language. `scope.locale` controls Listing evidence; `report_locale` controls display and must never change validation. The default concise user view shows localized conclusions only; do not expose stable status/error codes or Amazon's original foreign-language message there. Preserve those machine fields in the separate detailed audit view. For Chinese Markdown:
 
    ```bash
    python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown
@@ -53,7 +53,7 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
    ```
 
    Detailed Markdown and JSON must revalidate the embedded assessment before exposing quality fields, including when Detailed JSON is rendered again. They include the concise conclusion, official findings, all seven quality dimensions, Evidence Policy result, recommendations, limitations, fact bindings, and assessment trace. Write rationales and recommendations in `report_locale`. Recommendation priority must match the target rating: WEAK allows HIGH/MEDIUM, ADEQUATE allows MEDIUM/LOW, STRONG allows only LOW, and NOT_EVALUATED allows only `recommendation_type=EVIDENCE_REQUEST`. An exact suggested value is optional and can contain each manifest-bound scalar fact exactly once; literal separators are limited to spaces, comma, hyphens/dashes, slash, colon, and parentheses. Units and every other product fact require their own binding. It remains advisory and must be rechecked against PTD and a bound candidate Preview. `PASS` means the current evidence conditions are met; never label it “published successfully.”
-6. For private practice, use `scripts/evaluate_batch.py` with an explicit intent. `--mode observation` collects aggregate distributions without expected labels. `--mode golden-official` requires at least one expected official gate per sample. `--mode golden-quality` requires at least one expected concise-quality outcome per sample. Use a private `LISTING_DOCTOR_SAMPLE_REF_KEY` of at least 32 UTF-8 bytes when stable cross-run sample references are needed; sample references and suggestion digests use separate HMAC domains. Otherwise output uses non-identifying row indexes. Never add raw private Listing records to this repository; commit only synthetic fixtures and non-identifying aggregate conclusions. Read [the private practice guide](references/private-golden-dataset.md) before sampling production-like data.
+6. For private practice or delegated semantic analysis, collect the complete Listing evidence in the authorized parent environment first, then give the sub-agent one private normalized file instead of asking it to rediscover credentials or call mutating ERP endpoints. A side-effect-free Listings Items/Catalog Items GET adapter may supply this evidence; synchronization, cache refresh with persistence, Preview, PUT, PATCH, feed, and submission endpoints are outside this step. Keep the full private identity and raw evidence outside the repository. Use `scripts/evaluate_batch.py` with an explicit intent. `--mode observation` collects aggregate distributions without expected labels. `--mode golden-official` requires at least one expected official gate per sample. `--mode golden-quality` requires at least one expected concise-quality outcome per sample. Use a private `LISTING_DOCTOR_SAMPLE_REF_KEY` of at least 32 UTF-8 bytes when stable cross-run sample references are needed; sample references and suggestion digests use separate HMAC domains. Otherwise output uses non-identifying row indexes. Never add raw private Listing records to this repository; commit only synthetic fixtures and non-identifying aggregate conclusions. Read [the private practice guide](references/private-golden-dataset.md) before sampling production-like data.
 
 ## Evidence interpretation
 

@@ -6,9 +6,18 @@ Use production-like Listing records only in an authorized private environment. T
 
 1. Define the eligible population and record a fixed random seed before selection.
 2. Sample across marketplaces, locales, Product Types, parentage, and issue/no-issue states. Fetch only the fields needed by the public contract.
-3. Do not call synchronization, recheck, Preview, PUT, PATCH, feed, or submission endpoints as part of an observational practice run.
+3. A parent Agent may call side-effect-free Listings Items or Catalog Items GET adapters to complete the evidence before delegation. Do not call synchronization, cache-refresh-with-persistence, recheck, Preview, PUT, PATCH, feed, or submission endpoints as part of an observational practice run.
 4. Normalize in memory. Do not write raw responses, titles, attributes, image URLs, seller IDs, SKUs, ASINs, issue messages/codes, request IDs, or access credentials into the public checkout.
 5. Run each normalized input twice and compare the deterministic report fields.
+
+## Parent-to-sub-agent handoff
+
+When semantic assessment is delegated, the authorized parent environment owns SP-API authentication and evidence collection. Write one complete normalized input to a private temporary path, record its collection time and missing datasets, and pass only that path to the sub-agent. The sub-agent must not receive credentials or be asked to invoke ERP synchronization endpoints.
+
+Keep two outputs:
+
+- a private audit artifact containing stable codes, original Amazon messages, evidence hashes, and Seller Listing identity;
+- a user report containing localized conclusions, reasons, and actions only. For a Chinese user report, do not show English verdicts, gate names, stable error codes, or raw Amazon error messages. ASIN and suggested Listing content may remain when the user needs them.
 
 ## Choose the dataset mode
 

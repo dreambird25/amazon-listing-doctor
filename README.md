@@ -4,7 +4,7 @@
 
 本项目基于 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的 MIT 开源版本演进，现作为独立仓库维护。完整 Git 历史继续保留以追溯来源；原项目版权与许可声明保留在 [`LICENSE`](LICENSE)，修改与新增代码的归属说明见 [`NOTICE.md`](NOTICE.md)。仓库不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
-当前版本：**v1.5.0**。本版将内容质量结论与 Amazon 官方证据状态拆成两个独立摘要，避免把快照缺失、时效或追踪字段不足误写成 Listing 内容不完整；适用的官方错误仍会明确阻断操作，详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前版本：**v1.5.1**。本版支持由受控父环境先通过无副作用 SP-API GET 适配器补齐证据，再交给子代理评估；默认中文用户报告只显示中文结论、原因和行动，稳定 code 与 Amazon 原始消息保留在详细审计视图，详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 它回答三个不同问题
 
@@ -59,7 +59,7 @@ https://github.com/dreambird25/amazon-listing-doctor/tree/main/.agents/skills/am
 
 ## 生产使用结论
 
-v1.5.0 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。默认报告分别展示内容质量原因/行动和官方证据原因/行动，普通证据缺口不再覆盖内容质量结论。
+v1.5.1 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。默认报告分别展示内容质量原因/行动和官方证据原因/行动，普通证据缺口不再覆盖内容质量结论；中文简洁视图不要求用户理解内部英文状态或错误码。
 
 无人值守自动放行仍需由接入系统补齐：完整 Draft 2019-09 + Amazon vocabulary PTD 校验、Preview 独立限流、授权提交和提交后 issues/status 对账。Amazon 明确说明 Preview 适合少量 Listing，不是高吞吐生产主链路。官方依据见 [`生产就绪研究`](docs/production-readiness-research.md)，接入门禁见 [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)。
 
@@ -106,13 +106,13 @@ python .agents/skills/amazon-listing-doctor/scripts/merge_report.py \
 默认简洁层的形态如下（占位数据）：
 
 ```text
-Marketplace：MARKETPLACE_ID
-Seller SKU：SELLER_SKU
+站点：MARKETPLACE_ID
+卖家 SKU：SELLER_SKU
 ASIN：ASIN_PLACEHOLDER
 
 内容质量
 已评估维度平均分：8.0 / 10（内部启发式评分，非 Amazon 官方评分）
-评分覆盖：FULL（7/7，结构完整）
+评分覆盖：完整七维评分（7/7，结构完整）
 弱项维度：清晰度与可读性、图片信息覆盖
 内容质量原因：标题没有清楚表达已经验证的容量信息。
 内容优化行动：仅使用已绑定的 Listing 事实改善表达清晰度。
