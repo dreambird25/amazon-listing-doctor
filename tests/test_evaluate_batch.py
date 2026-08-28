@@ -129,6 +129,44 @@ class EvaluateBatchTest(unittest.TestCase):
         )
         self.assertNotEqual(sample_digest, suggestion_digest)
 
+    def test_quality_snapshot_uses_content_lane_when_official_evidence_is_missing(self):
+        report = {
+            "quality_verdict": "PARTIALLY_EVALUATED",
+            "executive_summary": {
+                "evaluated_dimension_average": {"status": "PARTIAL", "value": 7.0},
+                "primary_reason": {
+                    "source": "OFFICIAL_EVIDENCE",
+                    "code": "LISTING_SNAPSHOT_MISSING",
+                },
+                "primary_action": {"action_code": "REVIEW_OFFICIAL_EVIDENCE"},
+                "quality_primary_reason": {
+                    "dimension": "clarity_and_readability",
+                    "rating": "ADEQUATE",
+                },
+                "quality_primary_action": {
+                    "dimension": "clarity_and_readability",
+                    "action_code": "IMPROVE_CLARITY_WITH_BOUND_FACTS",
+                },
+                "official_primary_reason": {
+                    "status": "NOT_EVALUATED",
+                    "code": "LISTING_SNAPSHOT_MISSING",
+                    "finding_source": "LISTINGS_ITEMS",
+                },
+                "official_primary_action": {
+                    "action_code": "REVIEW_OFFICIAL_EVIDENCE",
+                },
+            },
+        }
+
+        snapshot = MODULE.quality_snapshot(report)
+
+        self.assertEqual("clarity_and_readability", snapshot["primary_reason_dimension"])
+        self.assertEqual(
+            "IMPROVE_CLARITY_WITH_BOUND_FACTS", snapshot["primary_action_code"]
+        )
+        self.assertEqual("LISTING_SNAPSHOT_MISSING", snapshot["official_reason_code"])
+        self.assertEqual("REVIEW_OFFICIAL_EVIDENCE", snapshot["official_action_code"])
+
     def test_hmac_key_must_have_at_least_32_utf8_bytes(self):
         with self.assertRaisesRegex(ValueError, "at least 32 UTF-8 bytes"):
             MODULE.evaluate_samples([{"input": {}}], "observation", "too-short")

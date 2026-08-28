@@ -4,7 +4,7 @@
 
 这是 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的公共 Fork，不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
-当前版本：**v1.4.1**。本版收紧精确改写字符与建议优先级，修复 Detailed JSON 重复重验，强化私有 HMAC，并保持 v1.4.0 的 Evidence Policy 与评分语义不变，详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前版本：**v1.5.0**。本版将内容质量结论与 Amazon 官方证据状态拆成两个独立摘要，避免把快照缺失、时效或追踪字段不足误写成 Listing 内容不完整；适用的官方错误仍会明确阻断操作，详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 它回答三个不同问题
 
@@ -59,7 +59,7 @@ https://github.com/dreambird25/amazon-listing-doctor/tree/main/.agents/skills/am
 
 ## 生产使用结论
 
-v1.4.1 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。质量建议还会重验评估目标、Locale、时间、官方报告哈希与按维度证据路径。
+v1.5.0 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。默认报告分别展示内容质量原因/行动和官方证据原因/行动，普通证据缺口不再覆盖内容质量结论。
 
 无人值守自动放行仍需由接入系统补齐：完整 Draft 2019-09 + Amazon vocabulary PTD 校验、Preview 独立限流、授权提交和提交后 issues/status 对账。Amazon 明确说明 Preview 适合少量 Listing，不是高吞吐生产主链路。官方依据见 [`生产就绪研究`](docs/production-readiness-research.md)，接入门禁见 [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)。
 
@@ -109,16 +109,23 @@ python .agents/skills/amazon-listing-doctor/scripts/merge_report.py \
 Marketplace：MARKETPLACE_ID
 Seller SKU：SELLER_SKU
 ASIN：ASIN_PLACEHOLDER
-发布决策：需要人工复核
+
+内容质量
 已评估维度平均分：8.0 / 10（内部启发式评分，非 Amazon 官方评分）
 评分覆盖：FULL（7/7，结构完整）
 弱项维度：清晰度与可读性、图片信息覆盖
-主要原因：标题没有清楚表达已经验证的容量信息。
-建议行动：仅使用已绑定的 Listing 事实改善表达清晰度。
+内容质量原因：标题没有清楚表达已经验证的容量信息。
+内容优化行动：仅使用已绑定的 Listing 事实改善表达清晰度。
 建议改为：Example Brand Bottle, 24 oz
+
+Amazon 官方证据状态
+当前 Listing：未评估
+发布决策：发布条件未评估
+官方证据完整性：未完成
+说明：官方证据未完成只表示尚不能确认 Amazon 当前状态，不代表 Listing 内容不完整。
 ```
 
-评分规则固定为 `STRONG=10`、`ADEQUATE=7`、`WEAK=3`，只对已评估维度求平均并保留一位小数；七维齐全为 `FULL/structurally_comparable=true`，五或六维为 `PARTIAL`，少于五维为 `NOT_SCORED`。两个分数只有在同为 `FULL` 且 `comparison_cohort_sha256` 一致时才允许比较；单份报告不自称“已可比”。高平均分不会隐藏 `WEAK` 维度。建议优先级必须匹配评级：`WEAK` 只允许 HIGH/MEDIUM，`ADEQUATE` 只允许 MEDIUM/LOW，`STRONG` 最多 LOW；`NOT_EVALUATED` 只能请求补充证据。存在适用于当前 Listing/候选的官方错误、证据异常或警告时，它优先成为首要原因与行动。语义评估必须绑定目标内容、Locale、时间与官方报告哈希，且每个维度满足对应证据政策。默认简洁行动由维度映射为稳定 code，不直接展示可能带未绑定事实的自由模型文案。精确改写只能使用已绑定原始标量值以及空格、逗号、短横线、长横线、斜杠、冒号和圆括号；每个事实默认恰好使用一次，容量单位等事实也必须单独绑定。
+评分规则固定为 `STRONG=10`、`ADEQUATE=7`、`WEAK=3`，只对已评估维度求平均并保留一位小数；七维齐全为 `FULL/structurally_comparable=true`，五或六维为 `PARTIAL`，少于五维为 `NOT_SCORED`。两个分数只有在同为 `FULL` 且 `comparison_cohort_sha256` 一致时才允许比较；单份报告不自称“已可比”。高平均分不会隐藏 `WEAK` 维度。建议优先级必须匹配评级：`WEAK` 只允许 HIGH/MEDIUM，`ADEQUATE` 只允许 MEDIUM/LOW，`STRONG` 最多 LOW；`NOT_EVALUATED` 只能请求补充证据。适用于当前 Listing 或候选的 `OFFICIAL_ERROR` 仍是操作阻断项；普通官方警告、未评估和证据异常在独立官方证据区展示，不再替代内容质量原因。语义评估必须绑定目标内容、Locale、时间与官方报告哈希，且每个维度满足对应证据政策。默认简洁行动由维度映射为稳定 code，不直接展示可能带未绑定事实的自由模型文案。精确改写只能使用已绑定原始标量值以及空格、逗号、短横线、长横线、斜杠、冒号和圆括号；每个事实默认恰好使用一次，容量单位等事实也必须单独绑定。
 
 相关契约：
 

@@ -230,12 +230,42 @@ class RenderReportTest(unittest.TestCase):
         self.assertIn("完整七维评分", markdown)
         self.assertIn("七维结构完整: 是", markdown)
         self.assertIn("非 Amazon 官方评分", markdown)
-        self.assertIn("官方验证完整度", markdown)
+        self.assertIn("内容质量", markdown)
+        self.assertIn("Amazon 官方证据状态", markdown)
+        self.assertIn("官方证据完整性", markdown)
         self.assertIn("(`COMPLETE`)", markdown)
         self.assertIn("标题没有清楚表达", markdown)
         self.assertIn("仅使用已绑定的 Listing 事实", markdown)
         self.assertIn("Example Brand Bottle, 24 oz", markdown)
         self.assertNotIn("PTD_CONSTRAINT_VIOLATION", markdown)
+
+    def test_official_gap_is_separate_from_content_quality(self):
+        report = self.report()
+        report["current_listing_gate"] = "NOT_EVALUATED"
+        report["candidate_preview_gate"] = "NOT_EVALUATED"
+        report["candidate_local_validation_gate"] = "NOT_EVALUATED"
+        report["release_decision"] = "NOT_EVALUATED"
+        report["release_reasons"] = ["CANDIDATE_PREVIEW_NOT_EVALUATED"]
+        report["official_validation_completeness"] = "INCOMPLETE"
+        report["findings"] = [{
+            "status": "NOT_EVALUATED",
+            "code": "LISTING_SNAPSHOT_MISSING",
+            "source": "LISTINGS_ITEMS",
+            "applies_to_current": True,
+            "message": "A traceable current Listing snapshot was not supplied.",
+        }]
+        report["official_report_sha256"] = official_report_sha256(report)
+        report["semantic_assessment"]["official_report_sha256"] = report[
+            "official_report_sha256"
+        ]
+
+        markdown = MODULE.render_markdown(report, "zh-CN")
+
+        self.assertIn("内容质量原因", markdown)
+        self.assertIn("标题没有清楚表达", markdown)
+        self.assertIn("官方状态原因", markdown)
+        self.assertIn("当前 Listing 可追溯快照缺失", markdown)
+        self.assertIn("不代表 Listing 内容不完整", markdown)
 
     def test_official_only_report_is_not_scored(self):
         report = self.report()
@@ -307,22 +337,23 @@ class RenderReportTest(unittest.TestCase):
     def test_official_blocker_is_the_primary_concise_action(self):
         report = self.report()
         report["release_decision"] = "BLOCK"
+        report["release_reasons"] = ["CANDIDATE_FULL_SCHEMA_VALIDATION_FAILED"]
         report["official_validation_completeness"] = "INCOMPLETE"
-        report["executive_summary"]["primary_reason"] = {
-            "source": "OFFICIAL_EVIDENCE",
+        report["findings"] = [{
             "status": "OFFICIAL_ERROR",
             "code": "PTD_CONSTRAINT_VIOLATION",
-            "text": "Measured value violates the bound PTD constraint.",
-        }
-        report["executive_summary"]["primary_action"] = {
-            "source": "OFFICIAL_EVIDENCE",
-            "action_code": "FIX_OFFICIAL_BLOCKER_AND_REVALIDATE",
-            "completion_code": "OFFICIAL_BLOCKER_CLEARED",
-        }
+            "source": "PTD",
+            "applies_to_candidate": True,
+            "message": "Measured value violates the bound PTD constraint.",
+        }]
+        report["official_report_sha256"] = official_report_sha256(report)
+        report["semantic_assessment"]["official_report_sha256"] = report[
+            "official_report_sha256"
+        ]
         markdown = MODULE.render_markdown(report, "zh-CN")
         self.assertIn("属性违反 PTD 约束", markdown)
         self.assertIn("先修复上述 Amazon 官方错误", markdown)
-        self.assertNotIn("标题没有清楚表达", markdown)
+        self.assertIn("标题没有清楚表达", markdown)
 
 
 if __name__ == "__main__":

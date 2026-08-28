@@ -29,7 +29,7 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 {
   "assessment_version": "1.3",
   "assessment_model": "MODEL_IDENTIFIER",
-  "prompt_version": "quality-v1.4.1",
+  "prompt_version": "quality-v1.5.0",
   "assessed_at": "2026-01-01T00:00:00Z",
   "assessment_target": "CURRENT",
   "assessment_locale": "en_US",
@@ -161,6 +161,12 @@ The renderer converts the bound scalar value itself; free `rendered_fact` text i
 The target dimension cannot be `NOT_EVALUATED`. Exact rewrites remain advisory and must pass the applicable PTD and a bound candidate `VALIDATION_PREVIEW`.
 
 The concise default action does not repeat free model prose. `merge_report.py` maps the selected recommendation dimension to a stable `action_code` and a generic `completion_code`, which the renderer localizes. The original `action` and `completion_criterion` remain visible only in the detailed audit view. This keeps unbound product claims out of the default operational instruction while preserving review traceability.
+
+## Separate content and official-evidence summaries
+
+`executive_summary.content_quality` contains the quality verdict, evidence completeness, score, reason, and action. `executive_summary.official_evidence` contains official validation completeness, coverage, reason, and action. The compatibility fields `quality_primary_reason` / `quality_primary_action` and `official_primary_reason` / `official_primary_action` mirror those lanes.
+
+For a merged quality report, missing, stale, or untraceable official evidence never replaces the content-quality reason. An applicable `OFFICIAL_ERROR` may remain the compatibility `primary_reason` because it blocks the operational workflow, but the renderer still displays both lanes. If no quality dimension was evaluated, the official reason remains the only available primary reason.
 
 ## Evidence discipline
 

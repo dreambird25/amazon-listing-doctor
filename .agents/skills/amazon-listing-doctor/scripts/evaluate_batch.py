@@ -36,6 +36,10 @@ QUALITY_EXPECTED_FIELDS = (
     "primary_reason_finding_source",
     "primary_action_dimension",
     "primary_action_code",
+    "official_reason_status",
+    "official_reason_code",
+    "official_reason_finding_source",
+    "official_action_code",
     "suggested_value_allowed",
     "suggested_value_hmac_sha256",
     "fact_binding_count",
@@ -83,8 +87,10 @@ def quality_snapshot(
 ) -> dict[str, Any]:
     summary = report.get("executive_summary") or {}
     score = summary.get("evaluated_dimension_average") or {}
-    reason = summary.get("primary_reason") or {}
-    action = summary.get("primary_action") or {}
+    reason = summary.get("quality_primary_reason") or summary.get("primary_reason") or {}
+    action = summary.get("quality_primary_action") or summary.get("primary_action") or {}
+    official_reason = summary.get("official_primary_reason") or {}
+    official_primary_action = summary.get("official_primary_action") or {}
     suggested_value = action.get("suggested_value")
     fact_bindings = action.get("fact_bindings") or []
     return {
@@ -100,6 +106,10 @@ def quality_snapshot(
         "primary_reason_finding_source": reason.get("finding_source"),
         "primary_action_dimension": action.get("dimension"),
         "primary_action_code": action.get("action_code"),
+        "official_reason_status": official_reason.get("status"),
+        "official_reason_code": official_reason.get("code"),
+        "official_reason_finding_source": official_reason.get("finding_source"),
+        "official_action_code": official_primary_action.get("action_code"),
         "suggested_value_allowed": bool(suggested_value),
         "suggested_value_hmac_sha256": (
             private_hmac(suggested_value, private_digest_key, SUGGESTED_VALUE_HMAC_DOMAIN)

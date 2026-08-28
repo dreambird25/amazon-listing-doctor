@@ -518,6 +518,48 @@ class MergeReportTest(unittest.TestCase):
             merged["executive_summary"]["primary_action"]["action_code"],
         )
 
+    def test_official_evidence_gap_does_not_hide_content_quality_reason(self):
+        report = self.official_report()
+        report["current_listing_gate"] = "NOT_EVALUATED"
+        report["candidate_preview_gate"] = "NOT_EVALUATED"
+        report["candidate_local_validation_gate"] = "NOT_EVALUATED"
+        report["release_decision"] = "NOT_EVALUATED"
+        report["release_reasons"] = ["CANDIDATE_PREVIEW_NOT_EVALUATED"]
+        report["official_validation_completeness"] = "INCOMPLETE"
+        report["findings"] = [{
+            "status": "NOT_EVALUATED",
+            "code": "LISTING_SNAPSHOT_MISSING",
+            "source": "LISTINGS_ITEMS",
+            "applies_to_current": True,
+            "message": "A traceable current Listing snapshot was not supplied.",
+        }]
+        report["official_report_sha256"] = official_report_sha256(report)
+        assessment = self.assessment("ADEQUATE", report)
+        assessment["dimensions"]["clarity_and_readability"].update({
+            "rating": "WEAK",
+            "rationale": "The supplied title is difficult to scan.",
+        })
+
+        merged, valid = MODULE.merge_report(report, assessment)
+
+        self.assertTrue(valid)
+        summary = merged["executive_summary"]
+        self.assertEqual("1.2", summary["summary_version"])
+        self.assertEqual(
+            "clarity_and_readability", summary["primary_reason"]["dimension"]
+        )
+        self.assertEqual(
+            "clarity_and_readability",
+            summary["content_quality"]["primary_reason"]["dimension"],
+        )
+        self.assertEqual(
+            "LISTING_SNAPSHOT_MISSING",
+            summary["official_evidence"]["primary_reason"]["code"],
+        )
+        self.assertEqual(
+            "INCOMPLETE", summary["official_evidence"]["validation_completeness"]
+        )
+
     def test_nonapplicable_official_finding_is_not_primary(self):
         report = self.official_report()
         report["release_decision"] = "BLOCK"
@@ -851,7 +893,9 @@ class MergeReportTest(unittest.TestCase):
         ]
         merged, valid = MODULE.merge_report(report, self.assessment(report=report))
         self.assertTrue(valid)
-        reason = merged["executive_summary"]["primary_reason"]
+        summary = merged["executive_summary"]
+        self.assertEqual("content_completeness", summary["primary_reason"]["dimension"])
+        reason = summary["official_evidence"]["primary_reason"]
         self.assertEqual("PTD_REQUIRED", reason["code"])
         self.assertEqual("PTD", reason["finding_source"])
 

@@ -49,9 +49,10 @@ def localize_report(report: Any, locale: str) -> dict[str, Any]:
             messages, "local_gate_labels", report.get("candidate_local_validation_gate")
         ),
         "release_decision": label(messages, "release_labels", report.get("release_decision")),
-        "official_validation_completeness": (
-            "完整" if locale == "zh-CN" and report.get("official_validation_completeness") == "COMPLETE"
-            else "不完整" if locale == "zh-CN" else str(report.get("official_validation_completeness") or "")
+        "official_validation_completeness": label(
+            messages,
+            "validation_completeness_labels",
+            report.get("official_validation_completeness"),
         ),
     }
     code_titles = messages.get("code_titles", {})
@@ -74,8 +75,28 @@ def localize_report(report: Any, locale: str) -> dict[str, Any]:
 def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
     scope = report.get("scope") if isinstance(report.get("scope"), dict) else {}
     official_reason = primary_official_finding(report)
+    official_primary_action = official_action(official_reason)
+    score = {
+        "status": "NOT_SCORED",
+        "value": None,
+        "raw_evaluated_average": None,
+        "scale": 10,
+        "type": "INTERNAL_HEURISTIC",
+        "official": False,
+        "comparable": False,
+        "structurally_comparable": False,
+        "comparison_rule": "BOTH_FULL_AND_SAME_COMPARISON_COHORT",
+        "comparison_cohort_sha256": None,
+        "evaluated_dimensions": 0,
+        "total_dimensions": 7,
+        "minimum_dimensions_required": 5,
+        "dimension_mask": [],
+        "weak_dimensions": [],
+        "rubric_version": "1.1",
+        "not_scored_reason": "No validated semantic quality assessment was merged.",
+    }
     result = {
-        "summary_version": "1.1",
+        "summary_version": "1.2",
         "identity": {
             "marketplace_id": scope.get("marketplace_id"),
             "seller_sku": scope.get("sku"),
@@ -89,27 +110,26 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
             "validation_completeness": report.get("official_validation_completeness"),
         },
         "quality_verdict": "NOT_EVALUATED",
-        "evaluated_dimension_average": {
-            "status": "NOT_SCORED",
-            "value": None,
-            "raw_evaluated_average": None,
-            "scale": 10,
-            "type": "INTERNAL_HEURISTIC",
-            "official": False,
-            "comparable": False,
-            "structurally_comparable": False,
-            "comparison_rule": "BOTH_FULL_AND_SAME_COMPARISON_COHORT",
-            "comparison_cohort_sha256": None,
-            "evaluated_dimensions": 0,
-            "total_dimensions": 7,
-            "minimum_dimensions_required": 5,
-            "dimension_mask": [],
-            "weak_dimensions": [],
-            "rubric_version": "1.1",
-            "not_scored_reason": "No validated semantic quality assessment was merged.",
-        },
+        "evaluated_dimension_average": score,
         "primary_reason": official_reason,
-        "primary_action": official_action(official_reason),
+        "primary_action": official_primary_action,
+        "quality_primary_reason": None,
+        "quality_primary_action": None,
+        "official_primary_reason": official_reason,
+        "official_primary_action": official_primary_action,
+        "content_quality": {
+            "verdict": "NOT_EVALUATED",
+            "evidence_completeness": "NOT_EVALUATED",
+            "evaluated_dimension_average": copy.deepcopy(score),
+            "primary_reason": None,
+            "primary_action": None,
+        },
+        "official_evidence": {
+            "validation_completeness": report.get("official_validation_completeness"),
+            "coverage": copy.deepcopy(report.get("official_evidence_coverage") or {}),
+            "primary_reason": copy.deepcopy(official_reason),
+            "primary_action": copy.deepcopy(official_primary_action),
+        },
         "performance_verdict": "NOT_EVALUATED",
         "disclaimer": "Internal content-quality summary; not an Amazon official score or performance prediction.",
     }
@@ -132,11 +152,25 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
     score = summary.get("evaluated_dimension_average") or {}
     reason = summary.get("primary_reason") or {}
     action = summary.get("primary_action") or {}
-    reason_text = str(reason.get("text") or messages["fields"]["no_reason"])
-    if reason.get("source") == "OFFICIAL_EVIDENCE" and locale == "zh-CN":
-        reason_text = str(
-            messages.get("code_titles", {}).get(str(reason.get("code") or "")) or reason_text
+    quality_reason = summary.get("quality_primary_reason") or {}
+    quality_action = summary.get("quality_primary_action") or {}
+    official_reason = summary.get("official_primary_reason") or {}
+    official_primary_action = summary.get("official_primary_action") or {}
+
+    def reason_text(value: dict[str, Any], fallback: str) -> str:
+        result = str(value.get("text") or fallback)
+        if value.get("source") == "OFFICIAL_EVIDENCE" and locale == "zh-CN":
+            result = str(
+                messages.get("code_titles", {}).get(str(value.get("code") or "")) or result
+            )
+        return result
+
+    def action_text(value: dict[str, Any], fallback: str) -> str:
+        return str(
+            label(messages, "action_codes", value.get("action_code"))
+            if value.get("action_code") else value.get("action") or fallback
         )
+
     return {
         "display_locale": localized["display_locale"],
         "summary": summary,
@@ -149,14 +183,24 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
             ),
             "score_status": label(messages, "score_status_labels", score.get("status")),
             "score_disclaimer": messages["fields"]["score_disclaimer"],
-            "primary_reason": reason_text,
-            "primary_action": (
-                label(messages, "action_codes", action.get("action_code"))
-                if action.get("action_code") else action.get("action")
-            ) or messages["fields"]["no_action"],
+            "primary_reason": reason_text(reason, messages["fields"]["no_reason"]),
+            "primary_action": action_text(action, messages["fields"]["no_action"]),
+            "content_primary_reason": reason_text(
+                quality_reason, messages["fields"]["no_reason"]
+            ),
+            "content_primary_action": action_text(
+                quality_action, messages["fields"]["no_action"]
+            ),
+            "official_primary_reason": reason_text(
+                official_reason, messages["fields"]["no_official_reason"]
+            ),
+            "official_primary_action": action_text(
+                official_primary_action, messages["fields"]["no_official_action"]
+            ),
             "completion_criterion": (
-                label(messages, "completion_codes", action.get("completion_code"))
-                if action.get("completion_code") else action.get("completion_criterion")
+                label(messages, "completion_codes", quality_action.get("completion_code"))
+                if quality_action.get("completion_code")
+                else quality_action.get("completion_criterion")
             ),
         },
     }
@@ -170,8 +214,9 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
     headings = messages["headings"]
     fields = messages["fields"]
     score = summary.get("evaluated_dimension_average") or {}
-    reason = summary.get("primary_reason") or {}
-    action = summary.get("primary_action") or {}
+    quality_action = summary.get("quality_primary_action") or {}
+    official_reason = summary.get("official_primary_reason") or {}
+    official_primary_action = summary.get("official_primary_action") or {}
     identity = summary.get("identity") or {}
     weak_dimensions = score.get("weak_dimensions") or []
     weak_display = ", ".join(
@@ -183,9 +228,47 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
         f"- {fields['marketplace']}: `{identity.get('marketplace_id') or '-'}`",
         f"- {fields['seller_sku']}: `{identity.get('seller_sku') or '-'}`",
         f"- {fields['asin']}: `{identity.get('asin') or '-'}`",
+        "",
+        f"## {headings['content_quality']}",
+        "",
+        f"- {fields['evaluated_dimension_average']}: {display['quality_score']}"
+        f"（{display['score_disclaimer']}）" if locale == "zh-CN" else
+        f"- {fields['evaluated_dimension_average']}: {display['quality_score']} "
+        f"({display['score_disclaimer']})",
+        f"- {fields['score_status']}: {display['score_status']} (`{score.get('status')}`)",
+        f"- {fields['dimensions']}: {score.get('evaluated_dimensions', 0)} / "
+        f"{score.get('total_dimensions', 7)}",
+        f"- {fields['weak_dimensions']}: {weak_display}",
+        f"- {fields['structurally_comparable']}: "
+        f"{fields['yes'] if score.get('structurally_comparable') else fields['no']}",
+        f"- {fields['quality_verdict']}: {display['quality_verdict']} "
+        f"(`{summary.get('quality_verdict')}`)",
+        "",
+        f"### {fields['content_primary_reason']}",
+        "",
+        str(display["content_primary_reason"]),
+        "",
+        f"### {fields['content_primary_action']}",
+        "",
+        str(display["content_primary_action"]),
+    ]
+    if quality_action.get("suggested_value"):
+        suggested_label = (
+            f"{fields['suggested_value']}：" if locale == "zh-CN"
+            else f"{fields['suggested_value']}:"
+        )
+        lines.extend(["", suggested_label, "", f"> {quality_action['suggested_value']}"])
+    quality_completion = display.get("completion_criterion")
+    if quality_completion:
+        lines.extend(["", f"- {fields['completion_criterion']}: {quality_completion}"])
+
+    lines.extend([
+        "",
+        f"## {headings['official_evidence']}",
+        "",
         f"- {fields['current_listing']}: {display['current_listing_gate']} "
         f"(`{report.get('current_listing_gate')}`)",
-    ]
+    ])
     if report.get("release_decision") != "PASS" \
             or report.get("candidate_preview_gate") != "PASS" \
             or report.get("candidate_local_validation_gate") != "PASS":
@@ -201,35 +284,30 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
         f"- {fields['official_validation_completeness']}: "
         f"{display['official_validation_completeness']} "
         f"(`{report.get('official_validation_completeness')}`)",
-        f"- {fields['evaluated_dimension_average']}: {display['quality_score']}"
-        f"（{display['score_disclaimer']}）" if locale == "zh-CN" else
-        f"- {fields['evaluated_dimension_average']}: {display['quality_score']} "
-        f"({display['score_disclaimer']})",
-        f"- {fields['score_status']}: {display['score_status']} (`{score.get('status')}`)",
-        f"- {fields['dimensions']}: {score.get('evaluated_dimensions', 0)} / "
-        f"{score.get('total_dimensions', 7)}",
-        f"- {fields['weak_dimensions']}: {weak_display}",
-        f"- {fields['structurally_comparable']}: "
-        f"{fields['yes'] if score.get('structurally_comparable') else fields['no']}",
-        f"- {fields['quality_verdict']}: {display['quality_verdict']} "
-        f"(`{summary.get('quality_verdict')}`)",
-        "",
-        f"## {fields['primary_reason']}",
-        "",
-        str(display["primary_reason"]),
-        "",
-        f"## {fields['primary_action']}",
-        "",
-        str(display["primary_action"]),
     ])
-    if action.get("suggested_value"):
-        suggested_label = (
-            f"{fields['suggested_value']}：" if locale == "zh-CN"
-            else f"{fields['suggested_value']}:"
+    if report.get("official_validation_completeness") != "COMPLETE":
+        lines.extend(["", f"> {fields['official_incomplete_note']}"])
+    if official_reason:
+        lines.extend([
+            "",
+            f"### {fields['official_primary_reason']}",
+            "",
+            str(display["official_primary_reason"]),
+        ])
+    if official_primary_action:
+        lines.extend([
+            "",
+            f"### {fields['official_primary_action']}",
+            "",
+            str(display["official_primary_action"]),
+        ])
+        completion = (
+            label(messages, "completion_codes", official_primary_action.get("completion_code"))
+            if official_primary_action.get("completion_code")
+            else official_primary_action.get("completion_criterion")
         )
-        lines.extend(["", suggested_label, "", f"> {action['suggested_value']}"])
-    if display.get("completion_criterion"):
-        lines.extend(["", f"- {fields['completion_criterion']}: {display['completion_criterion']}"])
+        if completion:
+            lines.extend(["", f"- {fields['completion_criterion']}: {completion}"])
     return "\n".join(lines) + "\n"
 
 

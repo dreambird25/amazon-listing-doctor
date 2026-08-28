@@ -4,7 +4,7 @@ description: "Diagnose Amazon seller Listings from JSON, Excel/CSV exports, or p
 license: MIT
 metadata:
   category: ecommerce/amazon
-  version: 1.4.1
+  version: 1.5.0
   upstream: buluslan/amazon-listing-doctor
 ---
 
@@ -46,7 +46,7 @@ Use `seller_id + marketplace_id + Seller SKU` as the seller Listing identity. AS
    python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown
    ```
 
-   The default view is the concise operational conclusion: Marketplace, Seller SKU, optional ASIN, relevant official gates and completeness, evaluated-dimension average with coverage/weak dimensions/comparability, primary evidence-based reason, one action, and an optional suggested value. In `REVIEW`, never let content advice or a candidate warning hide an applicable current official error. Use `--view detailed` when the user asks for findings or audit evidence:
+   The default view contains two explicit sections: content quality and Amazon official-evidence status. Content score, verdict, reason, action, and optional suggested value come only from the quality lane. Missing, stale, or untraceable official evidence stays in the official section and must not be described as incomplete Listing content. An applicable `OFFICIAL_ERROR` remains an operational blocker and is always shown in the official section. Use `--view detailed` when the user asks for findings or audit evidence:
 
    ```bash
    python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed

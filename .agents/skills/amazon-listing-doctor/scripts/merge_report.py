@@ -550,9 +550,18 @@ def build_executive_summary(
     quality_reason = primary_quality_reason(assessment["dimensions"])
     quality_action = primary_recommendation(assessment.get("recommendations") or [], quality_reason)
     official_reason = primary_official_finding(official_report)
+    official_primary_action = official_action(official_reason)
     score = derive_quality_score(assessment["dimensions"], assessment, scope)
+    _, quality_completeness = derive_quality(assessment["dimensions"])
+    official_blocker = bool(
+        official_reason and official_reason.get("status") == "OFFICIAL_ERROR"
+    )
+    operational_reason = official_reason if official_blocker else quality_reason or official_reason
+    operational_action = (
+        official_primary_action if official_blocker else quality_action or official_primary_action
+    )
     summary = {
-        "summary_version": "1.1",
+        "summary_version": "1.2",
         "identity": {
             "marketplace_id": scope.get("marketplace_id"),
             "seller_sku": scope.get("sku"),
@@ -567,10 +576,25 @@ def build_executive_summary(
         },
         "quality_verdict": verdict,
         "evaluated_dimension_average": score,
-        "primary_reason": official_reason or quality_reason,
-        "primary_action": official_action(official_reason) or quality_action,
+        "primary_reason": operational_reason,
+        "primary_action": operational_action,
         "quality_primary_reason": quality_reason,
         "quality_primary_action": quality_action,
+        "official_primary_reason": official_reason,
+        "official_primary_action": official_primary_action,
+        "content_quality": {
+            "verdict": verdict,
+            "evidence_completeness": quality_completeness,
+            "evaluated_dimension_average": copy.deepcopy(score),
+            "primary_reason": copy.deepcopy(quality_reason),
+            "primary_action": copy.deepcopy(quality_action),
+        },
+        "official_evidence": {
+            "validation_completeness": official_report["official_validation_completeness"],
+            "coverage": copy.deepcopy(official_report.get("official_evidence_coverage") or {}),
+            "primary_reason": copy.deepcopy(official_reason),
+            "primary_action": copy.deepcopy(official_primary_action),
+        },
         "performance_verdict": "NOT_EVALUATED",
         "disclaimer": "Internal content-quality summary; not an Amazon official score or performance prediction.",
     }
