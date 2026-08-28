@@ -68,8 +68,8 @@ def validate_skill() -> None:
         fail("SKILL.md name is invalid")
     if not re.search(r"(?m)^description:\s+.+$", frontmatter):
         fail("SKILL.md description is missing")
-    if not re.search(r"(?m)^\s+version:\s+1\.5\.1\s*$", frontmatter):
-        fail("SKILL.md version is not 1.5.1")
+    if not re.search(r"(?m)^\s+version:\s+1\.5\.2\s*$", frontmatter):
+        fail("SKILL.md version is not 1.5.2")
     if (ROOT / "SKILL.md").exists():
         fail("Root SKILL.md would duplicate the repo-scoped skill")
 

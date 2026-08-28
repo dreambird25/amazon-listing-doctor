@@ -12,6 +12,19 @@ Keep the public skill independent from private tables, endpoints, credentials, a
 
 The adapter may use REST, files, a read-only database view, or an in-process service. The public report contract must not reveal internal URLs, table names, credentials, tenant identifiers, or production topology.
 
+## Local development adapter
+
+An integrating project may expose a configurable loopback development API so the parent Agent can complete Listing evidence without entering a production environment.
+
+- Bind the adapter to an explicit development profile and development database. Do not infer the environment from a hostname alone.
+- Use the project's real development authentication and authorization path; do not disable access control or embed a token in this Skill.
+- Permit only side-effect-free reads such as Listings Items GET, Catalog Items GET, or an equivalent read-only RPC. A route that synchronizes, refreshes a persisted cache, runs Preview, or submits changes is not a data-collection adapter.
+- Keep the local base URL, route, credentials, store mapping, Seller Listing identity, and response archive in the integrating project's private environment. Public examples use placeholders only.
+- Normalize the response to this Skill's public contract in the parent environment, record missing datasets explicitly, and write the private normalized file outside the public checkout.
+- Keep production connectivity disabled by default. Accessing production requires a separate, explicit user-authorized workflow and is never implied by a request to run this Skill locally.
+
+After collection, hand the normalized file to an isolated semantic worker as described in [the private practice guide](private-golden-dataset.md). The worker receives no API access or credentials.
+
 ## Identity and freshness
 
 - Use `seller + marketplace + Seller SKU` as the seller Listing identity. ASIN alone is insufficient.

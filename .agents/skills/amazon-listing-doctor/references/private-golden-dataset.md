@@ -12,7 +12,9 @@ Use production-like Listing records only in an authorized private environment. T
 
 ## Parent-to-sub-agent handoff
 
-When semantic assessment is delegated, the authorized parent environment owns SP-API authentication and evidence collection. Write one complete normalized input to a private temporary path, record its collection time and missing datasets, and pass only that path to the sub-agent. The sub-agent must not receive credentials or be asked to invoke ERP synchronization endpoints.
+The authorized parent environment owns SP-API authentication, evidence collection, normalization, and completeness accounting. When sub-agents are available, semantic assessment must run in a fresh, short-context sub-agent by default. If the runtime has no sub-agent facility, use a separate clean process or isolated context phase rather than mixing data acquisition and model judgment in one long context.
+
+Write one complete normalized input to a private temporary path, record its collection time and missing datasets, and pass only that path plus the public Skill resources to the semantic worker. Do not pass credentials, private endpoint or database topology, raw response archives, or unrelated parent conversation history. The semantic worker must not call SP-API, ERP synchronization, cache refresh, Preview, PUT, PATCH, feed, submission, or production endpoints. It assesses the supplied evidence only and returns a contract-bound assessment for deterministic merging.
 
 Keep two outputs:
 

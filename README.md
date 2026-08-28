@@ -4,7 +4,7 @@
 
 本项目基于 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的 MIT 开源版本演进，现作为独立仓库维护。完整 Git 历史继续保留以追溯来源；原项目版权与许可声明保留在 [`LICENSE`](LICENSE)，修改与新增代码的归属说明见 [`NOTICE.md`](NOTICE.md)。仓库不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
-当前版本：**v1.5.1**。本版支持由受控父环境先通过无副作用 SP-API GET 适配器补齐证据，再交给子代理评估；默认中文用户报告只显示中文结论、原因和行动，稳定 code 与 Amazon 原始消息保留在详细审计视图，详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前版本：**v1.5.2**。本版将“父环境只读采集、隔离子代理语义质检”设为默认流程，并明确支持集成项目通过本机 dev API 补齐证据；默认中文用户报告只显示中文结论、原因和行动，稳定 code 与 Amazon 原始消息保留在详细审计视图，详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 它回答三个不同问题
 
@@ -59,7 +59,7 @@ https://github.com/dreambird25/amazon-listing-doctor/tree/main/.agents/skills/am
 
 ## 生产使用结论
 
-v1.5.1 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。默认报告分别展示内容质量原因/行动和官方证据原因/行动，普通证据缺口不再覆盖内容质量结论；中文简洁视图不要求用户理解内部英文状态或错误码。
+v1.5.2 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。默认报告分别展示内容质量原因/行动和官方证据原因/行动，普通证据缺口不再覆盖内容质量结论；中文简洁视图不要求用户理解内部英文状态或错误码。私有语义质检默认使用新鲜短上下文，数据采集仍由受控父环境完成。
 
 无人值守自动放行仍需由接入系统补齐：完整 Draft 2019-09 + Amazon vocabulary PTD 校验、Preview 独立限流、授权提交和提交后 issues/status 对账。Amazon 明确说明 Preview 适合少量 Listing，不是高吞吐生产主链路。官方依据见 [`生产就绪研究`](docs/production-readiness-research.md)，接入门禁见 [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)。
 
