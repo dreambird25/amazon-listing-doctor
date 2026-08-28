@@ -39,6 +39,23 @@ CONTENT_ATTRIBUTE_MAP = {
 }
 OFFICIAL_SOURCES = {"INPUT", "LISTINGS_ITEMS", "PTD", "VALIDATION_PREVIEW"}
 SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
+CONTENT_SOURCE_TYPES = {
+    "LISTINGS_ITEMS",
+    "CATALOG_ITEMS",
+    "STOREFRONT_OBSERVATION",
+    "FILE_EXPORT",
+    "PASTED_CONTENT",
+    "CANDIDATE_PAYLOAD",
+    "UNKNOWN",
+}
+CONTENT_SCOPES = {
+    "SELLER_CONTRIBUTION",
+    "BUYER_VISIBLE",
+    "SUPPLIED_CONTENT",
+    "CANDIDATE",
+}
+CONTENT_COVERAGE = {"COMPLETE", "PARTIAL", "UNKNOWN"}
+MISSING_FIELD_SEMANTICS = {"OBSERVED_ABSENT", "UNKNOWN"}
 
 
 def parse_timestamp(value: Any) -> datetime | None:
@@ -131,6 +148,70 @@ def normalize_attribute_aliases(value: Any) -> tuple[dict[str, str], list[dict[s
             visited.add(name)
             name = aliases[name]
     return aliases, rows
+
+
+def normalize_content_evidence(
+        value: Any, target: str,
+) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    default = {
+        "source_type": "CANDIDATE_PAYLOAD" if target == "CANDIDATE" else "UNKNOWN",
+        "content_scope": "CANDIDATE" if target == "CANDIDATE" else "SUPPLIED_CONTENT",
+        "coverage": "UNKNOWN",
+        "missing_field_semantics": "UNKNOWN",
+    }
+    if value is None:
+        return default, []
+    if not isinstance(value, dict):
+        return default, [finding(
+            SYSTEM_ERROR,
+            "CONTENT_EVIDENCE_INVALID",
+            "content evidence metadata must be an object.",
+            "INPUT",
+        )]
+    normalized = {
+        key: str(value.get(key) or default[key]).strip().upper()
+        for key in default
+    }
+    allowed = {
+        "source_type": CONTENT_SOURCE_TYPES,
+        "content_scope": CONTENT_SCOPES,
+        "coverage": CONTENT_COVERAGE,
+        "missing_field_semantics": MISSING_FIELD_SEMANTICS,
+    }
+    invalid = [key for key, values in allowed.items() if normalized[key] not in values]
+    source_type = normalized["source_type"]
+    content_scope = normalized["content_scope"]
+    coverage = normalized["coverage"]
+    missing_semantics = normalized["missing_field_semantics"]
+    if target == "CANDIDATE":
+        if content_scope != "CANDIDATE":
+            invalid.append("content_scope")
+        if source_type != "CANDIDATE_PAYLOAD":
+            invalid.append("source_type")
+    else:
+        if content_scope == "CANDIDATE":
+            invalid.append("content_scope")
+        if source_type == "CANDIDATE_PAYLOAD":
+            invalid.append("source_type")
+    if source_type == "LISTINGS_ITEMS" and content_scope != "SELLER_CONTRIBUTION":
+        invalid.append("content_scope")
+    if source_type == "STOREFRONT_OBSERVATION" and content_scope != "BUYER_VISIBLE":
+        invalid.append("content_scope")
+    if content_scope == "BUYER_VISIBLE" and source_type != "STOREFRONT_OBSERVATION":
+        invalid.append("source_type")
+    if source_type == "CATALOG_ITEMS" and content_scope != "SUPPLIED_CONTENT":
+        invalid.append("content_scope")
+    if missing_semantics == "OBSERVED_ABSENT" and coverage != "COMPLETE":
+        invalid.extend(("coverage", "missing_field_semantics"))
+    if invalid:
+        return default, [finding(
+            SYSTEM_ERROR,
+            "CONTENT_EVIDENCE_INVALID",
+            "content evidence metadata contains unsupported values.",
+            "INPUT",
+            evidence={"fields": sorted(set(invalid))},
+        )]
+    return normalized, []
 
 
 def canonical_attribute(attribute: Any, aliases: dict[str, str]) -> str:
@@ -1526,9 +1607,18 @@ def diagnose(data: Any) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     aliases, alias_rows = normalize_attribute_aliases(data.get("attribute_aliases"))
     rows.extend(alias_rows)
+    current_content_evidence, current_evidence_rows = normalize_content_evidence(
+        data.get("current_content_evidence"), "CURRENT"
+    )
+    rows.extend(current_evidence_rows)
+    candidate_content_evidence = None
     if isinstance(candidate_input, dict):
         candidate_input = dict(candidate_input)
         candidate_input["attribute_aliases"] = aliases
+        candidate_content_evidence, candidate_evidence_rows = normalize_content_evidence(
+            candidate_input.get("content_evidence"), "CANDIDATE"
+        )
+        rows.extend(candidate_evidence_rows)
     if candidate_content is not None and not isinstance(candidate_content, dict):
         invalid_content = finding(
             SYSTEM_ERROR,
@@ -1658,13 +1748,17 @@ def diagnose(data: Any) -> dict[str, Any]:
         "current_content_present": bool(current_content),
         "candidate_content_present": isinstance(candidate_content, dict),
         "attribute_alias_count": len(aliases),
+        "current_content_evidence": current_content_evidence,
+        "candidate_content_evidence": candidate_content_evidence,
     }
     report["quality_contexts"] = {
-        "CURRENT": build_quality_context("CURRENT", scope, current_content),
+        "CURRENT": build_quality_context(
+            "CURRENT", scope, current_content, current_content_evidence
+        ),
     }
     if isinstance(candidate_content, dict):
         report["quality_contexts"]["CANDIDATE"] = build_quality_context(
-            "CANDIDATE", scope, candidate_content
+            "CANDIDATE", scope, candidate_content, candidate_content_evidence
         )
     preview = official.get("validation_preview")
     report["validation_preview"] = {

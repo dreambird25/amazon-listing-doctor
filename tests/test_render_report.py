@@ -51,7 +51,12 @@ class RenderReportTest(unittest.TestCase):
             "counts": {},
             "data_as_of": "2026-01-01T00:00:00Z",
             "quality_contexts": {
-                "CURRENT": build_quality_context("CURRENT", scope, content),
+                "CURRENT": build_quality_context("CURRENT", scope, content, {
+                    "source_type": "STOREFRONT_OBSERVATION",
+                    "content_scope": "BUYER_VISIBLE",
+                    "coverage": "COMPLETE",
+                    "missing_field_semantics": "OBSERVED_ABSENT",
+                }),
             },
             "findings": [{
                 "status": "OFFICIAL_ERROR",
@@ -98,6 +103,7 @@ class RenderReportTest(unittest.TestCase):
         dimensions = {
             name: {
                 "rating": "STRONG",
+                "evidence_basis": "OBSERVED_CONTENT",
                 "rationale": "The supplied content supports this dimension.",
                 "evidence": dimension_evidence[name],
                 "missing_evidence": [],
@@ -113,13 +119,13 @@ class RenderReportTest(unittest.TestCase):
             "rationale": "只提供了一张图片。",
         })
         assessment = {
-            "assessment_version": "1.3",
+            "assessment_version": "1.4",
             "assessment_model": "test-model",
             "prompt_version": "quality-v1.4.0",
             "assessed_at": "2026-01-01T00:00:00Z",
             "assessment_target": "CURRENT",
             "assessment_locale": "en_US",
-            "evidence_policy_version": "1.0",
+            "evidence_policy_version": "1.1",
             "scope_fingerprint_sha256": report["quality_contexts"]["CURRENT"]["scope_fingerprint_sha256"],
             "content_sha256": report["quality_contexts"]["CURRENT"]["content_sha256"],
             "official_report_sha256": official_report_sha256(report),
@@ -189,6 +195,11 @@ class RenderReportTest(unittest.TestCase):
             "Measured value violates the bound PTD constraint.",
             localized["findings"][0]["message_original"],
         )
+
+    def test_concise_report_names_buyer_visible_content_scope(self):
+        markdown = MODULE.render_concise_markdown(self.report(), "zh-CN")
+        self.assertIn("内容证据范围: 买家前台可见内容", markdown)
+        self.assertIn("内容证据覆盖: 本次目标范围已完整采集", markdown)
 
     def test_all_static_engine_codes_have_chinese_titles(self):
         tree = ast.parse(DIAGNOSE.read_text(encoding="utf-8"))
@@ -329,6 +340,7 @@ class RenderReportTest(unittest.TestCase):
         detailed = MODULE.validated_detailed_report(report, "zh-CN")
         self.assertEqual("INVALID_ASSESSMENT", detailed["quality_render_status"])
         self.assertNotIn("semantic_assessment", detailed)
+        self.assertNotIn("quality_content_evidence", detailed)
         self.assertEqual("NOT_EVALUATED", detailed["quality_verdict"])
 
     def test_detailed_json_can_be_revalidated_after_display_fields_are_added(self):

@@ -99,16 +99,24 @@ def manifest_entries(value: Any, base_path: str) -> list[dict[str, str]]:
 
 def build_quality_context(
         target: str, scope: dict[str, Any], content: dict[str, Any],
+        content_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = "$.candidate.content" if target == "CANDIDATE" else "$.current_content"
     entries = manifest_entries(content, root)
+    normalized_evidence = dict(content_evidence or {
+        "source_type": "UNKNOWN",
+        "content_scope": "CANDIDATE" if target == "CANDIDATE" else "SUPPLIED_CONTENT",
+        "coverage": "UNKNOWN",
+        "missing_field_semantics": "UNKNOWN",
+    })
     return {
-        "context_version": "1.0",
+        "context_version": "1.1",
         "assessment_target": target,
         "scope_fingerprint_sha256": scope_fingerprint(scope),
         "content_sha256": sha256_json(content),
         "evidence_manifest_sha256": sha256_json(entries),
         "evidence_manifest": entries,
+        "content_evidence": normalized_evidence,
     }
 
 
@@ -134,8 +142,10 @@ def official_report_sha256(report: dict[str, Any]) -> str:
 def comparison_cohort_sha256(
         assessment: dict[str, Any], rubric_version: str, evidence_policy_version: str,
         scope: dict[str, Any] | None = None,
+        content_evidence: dict[str, Any] | None = None,
 ) -> str:
     scope = scope or {}
+    content_evidence = content_evidence or {}
     return sha256_json({
         "assessment_model": assessment.get("assessment_model"),
         "prompt_version": assessment.get("prompt_version"),
@@ -149,4 +159,8 @@ def comparison_cohort_sha256(
         "requirements": scope.get("requirements"),
         "parentage_level": scope.get("parentage_level"),
         "scope_locale": scope.get("locale"),
+        "content_source_type": content_evidence.get("source_type"),
+        "content_scope": content_evidence.get("content_scope"),
+        "content_coverage": content_evidence.get("coverage"),
+        "missing_field_semantics": content_evidence.get("missing_field_semantics"),
     })

@@ -63,13 +63,13 @@ The key must contain at least 32 UTF-8 bytes. The tool uses separate versioned H
 
 ## Quality-summary regression
 
-To regress the default user conclusion, store the bound `assessment_version=1.3` assessment and only non-identifying expected outcomes alongside each private input:
+To regress the default user conclusion, store the bound `assessment_version=1.4` assessment and only non-identifying expected outcomes alongside each private input:
 
 ```json
 {
   "sample_id": "PRIVATE_REFERENCE",
   "input": {"scope": {}, "official": {}},
-  "assessment": {"assessment_version": "1.3"},
+  "assessment": {"assessment_version": "1.4"},
   "expected_quality": {
     "quality_verdict": "NEEDS_IMPROVEMENT",
     "score_status": "FULL",

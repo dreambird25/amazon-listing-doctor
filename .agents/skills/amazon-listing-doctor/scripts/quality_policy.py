@@ -7,7 +7,8 @@ import re
 from typing import Any
 
 
-EVIDENCE_POLICY_VERSION = "1.0"
+EVIDENCE_POLICY_VERSION = "1.1"
+EVIDENCE_BASES = {"OBSERVED_CONTENT", "OBSERVED_ABSENCE", "EVIDENCE_GAP"}
 VISIBLE_TEXT_MODULES = {"title", "item_highlight", "bullets", "description", "attributes"}
 TEXT_MODULES = VISIBLE_TEXT_MODULES | {"backend_search_terms"}
 CONTENT_PATH = re.compile(r"^\$\.(?:current_content|candidate\.content)\.([^.[\]]+)")
@@ -41,6 +42,10 @@ def evaluate_evidence_policy(
         for item in manifest
         if isinstance(item, dict) and isinstance(item.get("field_path"), str)
     }
+    content_evidence = context.get("content_evidence") if isinstance(context, dict) else {}
+    content_evidence = content_evidence if isinstance(content_evidence, dict) else {}
+    content_coverage = content_evidence.get("coverage")
+    missing_field_semantics = content_evidence.get("missing_field_semantics")
     dimensions = assessment.get("dimensions")
     dimensions = dimensions if isinstance(dimensions, dict) else {}
     scope = official_report.get("scope")
@@ -52,6 +57,7 @@ def evaluate_evidence_policy(
         if not isinstance(row, dict):
             continue
         rating = row.get("rating")
+        evidence_basis = row.get("evidence_basis")
         evidence = row.get("evidence") if isinstance(row.get("evidence"), list) else []
         bound_items = [
             item for item in evidence
@@ -69,6 +75,7 @@ def evaluate_evidence_policy(
         passed = True
         rule_code = "DIRECT_BOUND_EVIDENCE"
         if rating == "NOT_EVALUATED":
+            passed = evidence_basis == "EVIDENCE_GAP"
             rule_code = "NOT_EVALUATED_WITH_MISSING_EVIDENCE"
         elif name == "content_completeness":
             minimum = 1 if rating == "WEAK" else 2
@@ -95,10 +102,23 @@ def evaluate_evidence_policy(
             passed = locale_matches and bool(string_modules & VISIBLE_TEXT_MODULES)
             rule_code = "BOUND_LOCALE_TEXT_REQUIRED"
 
+        if evidence_basis not in EVIDENCE_BASES:
+            passed = False
+        elif rating != "NOT_EVALUATED" and evidence_basis == "EVIDENCE_GAP":
+            passed = False
+        elif rating == "NOT_EVALUATED" and evidence_basis != "EVIDENCE_GAP":
+            passed = False
+        elif evidence_basis == "OBSERVED_ABSENCE" and not (
+                content_coverage == "COMPLETE"
+                and missing_field_semantics == "OBSERVED_ABSENT"
+        ):
+            passed = False
+
         results[name] = {
             "passed": passed,
             "rule_code": rule_code,
             "evidence_modules": modules,
+            "evidence_basis": evidence_basis,
         }
         if not passed:
             errors.append(f"{name} does not satisfy evidence policy {rule_code}")

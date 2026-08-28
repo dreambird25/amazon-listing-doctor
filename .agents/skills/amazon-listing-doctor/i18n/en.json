@@ -23,6 +23,8 @@
     "marketplace": "Marketplace",
     "seller_sku": "Seller SKU",
     "quality_score": "Content quality score",
+    "content_evidence_scope": "Content evidence scope",
+    "content_evidence_coverage": "Content evidence coverage",
     "evaluated_dimension_average": "Evaluated-dimension average",
     "score_status": "Score coverage status",
     "comparable": "Comparable",
@@ -63,6 +65,17 @@
   "validation_completeness_labels": {
     "COMPLETE": "Complete",
     "INCOMPLETE": "Incomplete"
+  },
+  "content_scope_labels": {
+    "SELLER_CONTRIBUTION": "Seller contribution (not the buyer storefront)",
+    "BUYER_VISIBLE": "Buyer-visible storefront content",
+    "SUPPLIED_CONTENT": "User-supplied content",
+    "CANDIDATE": "Candidate content"
+  },
+  "content_coverage_labels": {
+    "COMPLETE": "Complete for the assessed scope",
+    "PARTIAL": "Partial; omitted fields are not storefront-absence evidence",
+    "UNKNOWN": "Unknown; omitted fields are not storefront-absence evidence"
   },
   "score_status_labels": {
     "FULL": "Full seven-dimension score",
@@ -133,5 +146,7 @@
     "NOT_EVALUATED": "Not evaluated",
     "SYSTEM_ERROR": "System/evidence error"
   },
-  "code_titles": {}
+  "code_titles": {
+    "CONTENT_EVIDENCE_INVALID": "Content evidence metadata is invalid"
+  }
 }

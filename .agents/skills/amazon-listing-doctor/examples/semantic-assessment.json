@@ -1,18 +1,19 @@
 {
-  "assessment_version": "1.3",
+  "assessment_version": "1.4",
   "assessment_model": "example-semantic-model",
-  "prompt_version": "quality-v1.5.1",
+  "prompt_version": "quality-v1.5.4",
   "assessed_at": "2026-01-01T00:00:03Z",
   "assessment_target": "CURRENT",
   "assessment_locale": "en_US",
-  "evidence_policy_version": "1.0",
+  "evidence_policy_version": "1.1",
   "scope_fingerprint_sha256": "f3c5eef0a8e83663e754a246b48bc9508e64208d26a7d47d4abf69b2cfbac3fb",
   "content_sha256": "cf2164ccd6be025569970edf7954d1969c54a9f73ae106b15fa24a2c35649f4a",
-  "official_report_sha256": "543ec7bae7513d509da16fdf2857ecdd9f3cee24c77444341599d1357f558a26",
+  "official_report_sha256": "3b0c384966393f6a96f0b739c7f254311d98ca53edf36af795ebb9d7f3c69dbd",
   "evidence_manifest_sha256": "ab2138998406117a45cec0e66369da1bf0c91974871eafa01d9c223a79bfeea9",
   "dimensions": {
     "content_completeness": {
       "rating": "WEAK",
+      "evidence_basis": "OBSERVED_ABSENCE",
       "rationale": "Core text is present, but variation, backend-term, and additional image evidence is absent.",
       "evidence": [
         {
@@ -30,6 +31,7 @@
     },
     "clarity_and_readability": {
       "rating": "STRONG",
+      "evidence_basis": "OBSERVED_CONTENT",
       "rationale": "The title states material, product type, and capacity without visible repetition.",
       "evidence": [{
         "field_path": "$.current_content.title",
@@ -40,6 +42,7 @@
     },
     "intent_coverage": {
       "rating": "ADEQUATE",
+      "evidence_basis": "OBSERVED_CONTENT",
       "rationale": "The content names commuting, workouts, and everyday hydration use cases.",
       "evidence": [{
         "field_path": "$.current_content.description",
@@ -50,6 +53,7 @@
     },
     "buyer_question_coverage": {
       "rating": "ADEQUATE",
+      "evidence_basis": "OBSERVED_CONTENT",
       "rationale": "Capacity, lid behavior, insulation, and cup-holder fit are addressed.",
       "evidence": [{
         "field_path": "$.current_content.bullets[2]",
@@ -60,6 +64,7 @@
     },
     "image_information_coverage": {
       "rating": "WEAK",
+      "evidence_basis": "OBSERVED_ABSENCE",
       "rationale": "Only one main-image record is supplied, so use, feature, and packaging views are absent.",
       "evidence": [{
         "field_path": "$.current_content.images[0].url",
@@ -70,6 +75,7 @@
     },
     "cross_field_consistency": {
       "rating": "ADEQUATE",
+      "evidence_basis": "OBSERVED_CONTENT",
       "rationale": "The supplied title, bullets, and description consistently describe a 24 oz insulated bottle.",
       "evidence": [
         {
@@ -87,6 +93,7 @@
     },
     "localization_quality": {
       "rating": "NOT_EVALUATED",
+      "evidence_basis": "EVIDENCE_GAP",
       "rationale": "",
       "evidence": [],
       "missing_evidence": ["marketplace-specific language and unit requirements"]

@@ -23,6 +23,8 @@
     "marketplace": "站点",
     "seller_sku": "卖家 SKU",
     "quality_score": "内容质量评分",
+    "content_evidence_scope": "内容证据范围",
+    "content_evidence_coverage": "内容证据覆盖",
     "evaluated_dimension_average": "已评估维度平均分",
     "score_status": "评分覆盖状态",
     "comparable": "可横向比较",
@@ -63,6 +65,17 @@
   "validation_completeness_labels": {
     "COMPLETE": "已完成",
     "INCOMPLETE": "未完成"
+  },
+  "content_scope_labels": {
+    "SELLER_CONTRIBUTION": "卖家后台贡献字段（不等同买家前台）",
+    "BUYER_VISIBLE": "买家前台可见内容",
+    "SUPPLIED_CONTENT": "用户提供的内容",
+    "CANDIDATE": "候选内容"
+  },
+  "content_coverage_labels": {
+    "COMPLETE": "本次目标范围已完整采集",
+    "PARTIAL": "仅部分采集，缺失字段不能视为前台缺失",
+    "UNKNOWN": "采集完整性未知，缺失字段不能视为前台缺失"
   },
   "score_status_labels": {
     "FULL": "完整七维评分",
@@ -134,6 +147,7 @@
     "SYSTEM_ERROR": "系统或证据异常"
   },
   "code_titles": {
+    "CONTENT_EVIDENCE_INVALID": "内容证据元数据无效",
     "ATTRIBUTE_ALIASES_INVALID": "属性别名配置格式错误",
     "ATTRIBUTE_ALIAS_INVALID": "属性别名条目无效",
     "ATTRIBUTE_ALIAS_CYCLE": "属性别名存在循环引用",

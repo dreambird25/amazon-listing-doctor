@@ -13,7 +13,9 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from merge_report import (
+    assessment_content_evidence,
     build_executive_summary,
+    combined_quality_completeness,
     derive_quality,
     render_suggested_template,
     validate_assessment,
@@ -76,6 +78,12 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
     scope = report.get("scope") if isinstance(report.get("scope"), dict) else {}
     official_reason = primary_official_finding(report)
     official_primary_action = official_action(official_reason, report)
+    current_context = (report.get("quality_contexts") or {}).get("CURRENT") \
+        if isinstance(report.get("quality_contexts"), dict) else {}
+    content_evidence = current_context.get("content_evidence") \
+        if isinstance(current_context, dict) else {}
+    content_evidence = copy.deepcopy(content_evidence) \
+        if isinstance(content_evidence, dict) else {}
     score = {
         "status": "NOT_SCORED",
         "value": None,
@@ -94,6 +102,8 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
         "weak_dimensions": [],
         "rubric_version": "1.1",
         "not_scored_reason": "No validated semantic quality assessment was merged.",
+        "content_scope": content_evidence.get("content_scope"),
+        "content_coverage": content_evidence.get("coverage"),
     }
     result = {
         "summary_version": "1.2",
@@ -110,6 +120,7 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
             "validation_completeness": report.get("official_validation_completeness"),
         },
         "quality_verdict": "NOT_EVALUATED",
+        "content_evidence": content_evidence,
         "evaluated_dimension_average": score,
         "primary_reason": official_reason,
         "primary_action": official_primary_action,
@@ -120,6 +131,7 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
         "content_quality": {
             "verdict": "NOT_EVALUATED",
             "evidence_completeness": "NOT_EVALUATED",
+            "content_evidence": copy.deepcopy(content_evidence),
             "evaluated_dimension_average": copy.deepcopy(score),
             "primary_reason": None,
             "primary_action": None,
@@ -150,6 +162,7 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
     summary = validated_executive_summary(report)
     messages = load_messages(locale)
     score = summary.get("evaluated_dimension_average") or {}
+    content_evidence = summary.get("content_evidence") or {}
     reason = summary.get("primary_reason") or {}
     action = summary.get("primary_action") or {}
     quality_reason = summary.get("quality_primary_reason") or {}
@@ -183,6 +196,12 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
             ),
             "score_status": label(messages, "score_status_labels", score.get("status")),
             "score_disclaimer": messages["fields"]["score_disclaimer"],
+            "content_scope": label(
+                messages, "content_scope_labels", content_evidence.get("content_scope")
+            ),
+            "content_coverage": label(
+                messages, "content_coverage_labels", content_evidence.get("coverage")
+            ),
             "primary_reason": reason_text(reason, messages["fields"]["no_reason"]),
             "primary_action": action_text(action, messages["fields"]["no_action"]),
             "content_primary_reason": reason_text(
@@ -231,6 +250,8 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
         "",
         f"## {headings['content_quality']}",
         "",
+        f"- {fields['content_evidence_scope']}: {display['content_scope']}",
+        f"- {fields['content_evidence_coverage']}: {display['content_coverage']}",
         f"- {fields['evaluated_dimension_average']}: {display['quality_score']}"
         f"（{display['score_disclaimer']}）" if locale == "zh-CN" else
         f"- {fields['evaluated_dimension_average']}: {display['quality_score']} "
@@ -409,20 +430,25 @@ def validated_detailed_report(report: dict[str, Any], locale: str) -> dict[str, 
     if errors:
         for field in (
             "semantic_assessment", "quality_dimensions", "quality_evidence_completeness",
-            "quality_evidence_policy", "quality_assessment_trace",
+            "quality_content_evidence", "quality_evidence_policy", "quality_assessment_trace",
         ):
             result.pop(field, None)
         result["quality_verdict"] = "NOT_EVALUATED"
         result["quality_render_status"] = "INVALID_ASSESSMENT"
         result["quality_render_errors"] = errors
     else:
-        verdict, completeness = derive_quality(assessment["dimensions"])
+        verdict, dimension_completeness = derive_quality(assessment["dimensions"])
+        content_evidence = assessment_content_evidence(report, assessment)
+        completeness = combined_quality_completeness(
+            dimension_completeness, content_evidence
+        )
         policy, _ = evaluate_evidence_policy(assessment, report)
         result["quality_verdict"] = verdict
         result["quality_dimensions"] = {
             name: row["rating"] for name, row in assessment["dimensions"].items()
         }
         result["quality_evidence_completeness"] = completeness
+        result["quality_content_evidence"] = content_evidence
         result["quality_evidence_policy"] = policy
         result["quality_assessment_trace"] = {
             key: assessment[key] for key in (

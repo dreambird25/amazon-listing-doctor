@@ -60,7 +60,12 @@ class MergeReportTest(unittest.TestCase):
             "findings": [],
             "data_as_of": "2026-01-01T00:00:00Z",
             "quality_contexts": {
-                "CURRENT": build_quality_context("CURRENT", scope, content),
+                "CURRENT": build_quality_context("CURRENT", scope, content, {
+                    "source_type": "STOREFRONT_OBSERVATION",
+                    "content_scope": "BUYER_VISIBLE",
+                    "coverage": "COMPLETE",
+                    "missing_field_semantics": "OBSERVED_ABSENT",
+                }),
             },
         }
         report["official_report_sha256"] = official_report_sha256(report)
@@ -102,13 +107,13 @@ class MergeReportTest(unittest.TestCase):
             ],
         }
         return {
-            "assessment_version": "1.3",
+            "assessment_version": "1.4",
             "assessment_model": "test-model",
             "prompt_version": "quality-v1.4.0",
             "assessed_at": "2026-01-01T00:00:00Z",
             "assessment_target": "CURRENT",
             "assessment_locale": "en_US",
-            "evidence_policy_version": "1.0",
+            "evidence_policy_version": "1.1",
             "scope_fingerprint_sha256": context["scope_fingerprint_sha256"],
             "content_sha256": context["content_sha256"],
             "official_report_sha256": official_report_sha256(report),
@@ -116,6 +121,7 @@ class MergeReportTest(unittest.TestCase):
             "dimensions": {
                 name: {
                     "rating": rating,
+                    "evidence_basis": "OBSERVED_CONTENT",
                     "rationale": "Direct evidence supports this rating.",
                     "evidence": dimension_evidence[name],
                     "missing_evidence": ["additional content module"] if rating == "WEAK"
@@ -134,7 +140,7 @@ class MergeReportTest(unittest.TestCase):
         self.assertEqual("STRONG", merged["quality_verdict"])
         self.assertEqual("COMPLETE", merged["quality_evidence_completeness"])
         self.assertTrue(merged["quality_evidence_policy"]["passed"])
-        self.assertEqual("1.0", merged["quality_evidence_policy"]["version"])
+        self.assertEqual("1.1", merged["quality_evidence_policy"]["version"])
         self.assertEqual("NOT_EVALUATED", merged["performance_verdict"])
         self.assertEqual("PASS", merged["release_decision"])
         self.assertEqual(10.0, merged["executive_summary"]["quality_score"]["value"])
@@ -171,6 +177,7 @@ class MergeReportTest(unittest.TestCase):
         row = assessment["dimensions"]["localization_quality"]
         row.update({
             "rating": "NOT_EVALUATED",
+            "evidence_basis": "EVIDENCE_GAP",
             "rationale": "",
             "evidence": [],
             "missing_evidence": ["locale-specific content"],
@@ -206,6 +213,51 @@ class MergeReportTest(unittest.TestCase):
             "encoding defect claim requires suspicious bound text" in error
             for error in merged["errors"]
         ))
+
+    def test_missing_content_claim_requires_observed_absence_basis(self):
+        assessment = self.assessment("ADEQUATE")
+        assessment["dimensions"]["content_completeness"].update({
+            "rating": "WEAK",
+            "evidence_basis": "OBSERVED_CONTENT",
+            "rationale": "当前来源只有标题，缺少要点和描述。",
+            "missing_evidence": ["bullets", "description"],
+        })
+        merged, valid = MODULE.merge_report(self.official_report(), assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any(
+            "missing-content claim requires OBSERVED_ABSENCE evidence" in error
+            for error in merged["errors"]
+        ))
+
+    def test_observed_absence_requires_complete_source_coverage(self):
+        report = self.official_report()
+        report["quality_contexts"]["CURRENT"]["content_evidence"].update({
+            "source_type": "LISTINGS_ITEMS",
+            "content_scope": "SELLER_CONTRIBUTION",
+            "coverage": "PARTIAL",
+            "missing_field_semantics": "UNKNOWN",
+        })
+        report["official_report_sha256"] = official_report_sha256(report)
+        assessment = self.assessment("ADEQUATE", report=report)
+        assessment["dimensions"]["content_completeness"].update({
+            "rating": "WEAK",
+            "evidence_basis": "OBSERVED_ABSENCE",
+            "rationale": "The supplied source is missing bullets and description.",
+            "missing_evidence": ["bullets", "description"],
+        })
+        merged, valid = MODULE.merge_report(report, assessment)
+        self.assertFalse(valid)
+        self.assertTrue(any(
+            "content_completeness does not satisfy evidence policy" in error
+            for error in merged["errors"]
+        ))
+
+    def test_summary_exposes_buyer_visible_content_scope(self):
+        merged, valid = MODULE.merge_report(self.official_report(), self.assessment())
+        self.assertTrue(valid)
+        evidence = merged["executive_summary"]["content_evidence"]
+        self.assertEqual("BUYER_VISIBLE", evidence["content_scope"])
+        self.assertEqual("COMPLETE", evidence["coverage"])
 
     def test_negated_defect_statements_do_not_require_suspicious_text(self):
         rationales = (
@@ -265,6 +317,7 @@ class MergeReportTest(unittest.TestCase):
         assessment = self.assessment("ADEQUATE")
         assessment["dimensions"]["localization_quality"] = {
             "rating": "NOT_EVALUATED",
+            "evidence_basis": "EVIDENCE_GAP",
             "rationale": "",
             "evidence": [],
             "missing_evidence": ["A native German reviewer is unavailable."],
@@ -294,6 +347,7 @@ class MergeReportTest(unittest.TestCase):
             if name != "clarity_and_readability":
                 assessment["dimensions"][name] = {
                     "rating": "NOT_EVALUATED",
+                    "evidence_basis": "EVIDENCE_GAP",
                     "rationale": "",
                     "evidence": [],
                     "missing_evidence": ["not needed for this focused test"],
@@ -301,6 +355,7 @@ class MergeReportTest(unittest.TestCase):
         value = "Leak-resistant lid \ufffd for daily use."
         assessment["dimensions"]["clarity_and_readability"] = {
             "rating": "WEAK",
+            "evidence_basis": "OBSERVED_CONTENT",
             "rationale": "The visible bullet contains a replacement character.",
             "evidence": [{
                 "field_path": "$.current_content.bullets[0]",
@@ -416,6 +471,7 @@ class MergeReportTest(unittest.TestCase):
         for name in MODULE.DIMENSIONS[4:]:
             assessment["dimensions"][name] = {
                 "rating": "NOT_EVALUATED",
+                "evidence_basis": "EVIDENCE_GAP",
                 "rationale": "",
                 "evidence": [],
                 "missing_evidence": ["required evidence"],
@@ -571,6 +627,7 @@ class MergeReportTest(unittest.TestCase):
         assessment = self.assessment("ADEQUATE")
         assessment["dimensions"]["clarity_and_readability"] = {
             "rating": "NOT_EVALUATED",
+            "evidence_basis": "EVIDENCE_GAP",
             "rationale": "",
             "evidence": [],
             "missing_evidence": ["localized title"],
@@ -601,6 +658,7 @@ class MergeReportTest(unittest.TestCase):
         assessment = self.assessment("ADEQUATE")
         assessment["dimensions"]["localization_quality"] = {
             "rating": "NOT_EVALUATED",
+            "evidence_basis": "EVIDENCE_GAP",
             "rationale": "",
             "evidence": [{
                 "field_path": "$.current_content.attributes.capacity[0].unit",
@@ -813,6 +871,7 @@ class MergeReportTest(unittest.TestCase):
         for name in MODULE.DIMENSIONS[-2:]:
             assessment["dimensions"][name] = {
                 "rating": "NOT_EVALUATED",
+                "evidence_basis": "EVIDENCE_GAP",
                 "rationale": "",
                 "evidence": [],
                 "missing_evidence": ["required evidence"],
@@ -882,6 +941,7 @@ class MergeReportTest(unittest.TestCase):
         assessment = self.assessment("ADEQUATE")
         assessment["dimensions"]["localization_quality"] = {
             "rating": "NOT_EVALUATED",
+            "evidence_basis": "EVIDENCE_GAP",
             "rationale": "",
             "evidence": [],
             "missing_evidence": ["localized review"],
@@ -904,6 +964,7 @@ class MergeReportTest(unittest.TestCase):
         assessment = self.assessment("ADEQUATE")
         assessment["dimensions"]["localization_quality"] = {
             "rating": "NOT_EVALUATED",
+            "evidence_basis": "EVIDENCE_GAP",
             "rationale": "",
             "evidence": [{
                 "field_path": "$.current_content.title",

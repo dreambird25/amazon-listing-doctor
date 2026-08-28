@@ -15,6 +15,12 @@
     "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "created_at": "2026-01-01T00:00:00Z"
   },
+  "current_content_evidence": {
+    "source_type": "FILE_EXPORT",
+    "content_scope": "SUPPLIED_CONTENT",
+    "coverage": "COMPLETE",
+    "missing_field_semantics": "OBSERVED_ABSENT"
+  },
   "content": {
     "title": "Insulated Stainless Steel Water Bottle, 24 oz",
     "bullets": [

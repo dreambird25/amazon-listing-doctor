@@ -4,7 +4,7 @@ A repo-discoverable Codex Skill for evidence-first Amazon Listing diagnostics. I
 
 This public fork of [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) contains no company-specific code, endpoints, schemas, account identifiers, SKUs, ASINs, credentials, or runtime configuration.
 
-Current version: **v1.4.1**. This release hardens exact-suggestion separators, rating-aware recommendation priorities, repeatable Detailed JSON validation, and private HMAC use while preserving the v1.4.0 Evidence Policy and score semantics. See [`CHANGELOG.md`](CHANGELOG.md).
+Current version: **v1.5.4**. This release binds content source, display scope, coverage, and missing-field semantics so Listings Items seller contributions cannot be presented as buyer-visible storefront content. Partial sources no longer turn omitted fields into storefront defects, and concise reports show the evidence scope and coverage. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Three independent conclusions
 
@@ -55,7 +55,7 @@ The public version does not authenticate to Seller Central or call SP-API. A use
 
 ## Production status
 
-v1.4.1 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass. Quality assessments also bind locale and time and must satisfy dimension-specific evidence paths.
+v1.5.4 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass. Quality assessments also bind locale, time, content source scope, coverage, and dimension-specific evidence paths.
 
 Unattended automatic release still requires a full Draft 2019-09 validator with Amazon vocabulary support, independent Preview rate limiting, an authorized submission workflow, and post-submission issue/status reconciliation in the integrating system. See the [official-source production research](docs/production-readiness-research.md) and [production integration guide](.agents/skills/amazon-listing-doctor/references/production-readiness.md).
 

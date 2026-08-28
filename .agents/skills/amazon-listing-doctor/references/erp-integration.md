@@ -9,6 +9,7 @@ Keep the public skill independent from private tables, endpoints, credentials, a
 3. **Read PTD evidence**: schema status, checksum/version, effective scope, extracted constraints, expiry, and last refresh result.
 4. **Run candidate preview**: hash the exact canonical candidate payload, compute the public request fingerprint, submit it with `mode=VALIDATION_PREVIEW`, and return the normalized request scope, response status, issues, request/submission identifiers, HTTP status, ordered timestamps, and expiry.
 5. **Read catalog context**: optional Catalog Items data clearly labeled as merged catalog context, never seller contribution.
+6. **Read buyer-visible content when required**: collect the scoped marketplace storefront title, visible bullets, description, images, and capture time without presenting Listings Items or Catalog Items as a storefront substitute.
 
 The adapter may use REST, files, a read-only database view, or an in-process service. The public report contract must not reveal internal URLs, table names, credentials, tenant identifiers, or production topology.
 
@@ -30,6 +31,8 @@ After collection, hand the normalized file to an isolated semantic worker as des
 - Use `seller + marketplace + Seller SKU` as the seller Listing identity. ASIN alone is insufficient.
 - Include product type, parentage level when known, locale, data source, fetched-at time, and dataset completeness.
 - Keep the observed Listing in `current_content` and the exact proposed projection in `candidate.content`; never reuse one object implicitly in a new integration.
+- Populate `current_content_evidence` and optional `candidate.content_evidence`. Use `LISTINGS_ITEMS + SELLER_CONTRIBUTION` for Listings Items attributes, `CATALOG_ITEMS + SUPPLIED_CONTENT` for catalog context, and `STOREFRONT_OBSERVATION + BUYER_VISIBLE` only for an actual scoped storefront observation.
+- A partial API projection, a browser page that did not finish loading, or an adapter that selected only some fields must use `coverage=PARTIAL|UNKNOWN` and `missing_field_semantics=UNKNOWN`. Do not turn omitted data into a missing-content defect.
 - Preserve complete Amazon attribute arrays with `language_tag` and `marketplace_id`. Declare source-to-PTD names in `attribute_aliases`; do not hide alias rules inside adapter code.
 - Do not combine attributes from different marketplaces or sellers into one diagnostic object.
 - Mark delayed, partial, or stale snapshots explicitly. Do not silently promote cached data to current evidence.

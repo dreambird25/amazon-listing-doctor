@@ -172,6 +172,36 @@ class DiagnoseListingTest(unittest.TestCase):
         })
         self.assertNotIn("Valid title", json.dumps(first))
 
+    def test_listings_items_cannot_claim_buyer_visible_scope(self):
+        data = self.base()
+        data["current_content_evidence"] = {
+            "source_type": "LISTINGS_ITEMS",
+            "content_scope": "BUYER_VISIBLE",
+            "coverage": "COMPLETE",
+            "missing_field_semantics": "OBSERVED_ABSENT",
+        }
+        report = MODULE.diagnose(data)
+        self.assertTrue(any(
+            row.get("code") == "CONTENT_EVIDENCE_INVALID"
+            for row in report["findings"]
+        ))
+        self.assertGreater(report["counts"][MODULE.SYSTEM_ERROR], 0)
+
+    def test_partial_source_cannot_declare_omitted_fields_absent(self):
+        data = self.base()
+        data["current_content_evidence"] = {
+            "source_type": "LISTINGS_ITEMS",
+            "content_scope": "SELLER_CONTRIBUTION",
+            "coverage": "PARTIAL",
+            "missing_field_semantics": "OBSERVED_ABSENT",
+        }
+        report = MODULE.diagnose(data)
+        self.assertTrue(any(
+            row.get("code") == "CONTENT_EVIDENCE_INVALID"
+            for row in report["findings"]
+        ))
+        self.assertGreater(report["counts"][MODULE.SYSTEM_ERROR], 0)
+
     def test_candidate_quality_context_is_separate_from_current_content(self):
         data = self.base()
         data["current_content"] = data.pop("content")

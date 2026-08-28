@@ -36,6 +36,7 @@ DIMENSIONS = (
     "localization_quality",
 )
 RATINGS = {"STRONG", "ADEQUATE", "WEAK", "NOT_EVALUATED"}
+EVIDENCE_BASES = {"OBSERVED_CONTENT", "OBSERVED_ABSENCE", "EVIDENCE_GAP"}
 PRIORITIES = {"HIGH", "MEDIUM", "LOW"}
 PRIORITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 RECOMMENDATION_TYPES = {"IMPROVEMENT", "EVIDENCE_REQUEST"}
@@ -114,6 +115,30 @@ TECHNICAL_ARTIFACT_CLAIM_MARKERS = (
     "日志残留",
     "调试信息",
     "调试文本",
+)
+MISSING_CONTENT_CLAIM_MARKERS = (
+    "missing bullet",
+    "missing bullets",
+    "missing description",
+    "missing content",
+    "lacks bullet",
+    "lacks description",
+    "only a title",
+    "only the title",
+    "content was not provided",
+    "bullets were not provided",
+    "description was not provided",
+    "缺少亮点",
+    "缺少要点",
+    "缺少描述",
+    "缺少搜索词",
+    "缺少产品属性",
+    "只有一个标题",
+    "只有标题",
+    "未提供要点",
+    "未提供描述",
+    "未返回要点",
+    "未返回描述",
 )
 QUALITY_ACTION_CODES = {
     "content_completeness": "COMPLETE_MISSING_CONTENT_EVIDENCE",
@@ -228,6 +253,10 @@ def text_asserts_marked_defect(value: Any, markers: tuple[str, ...]) -> bool:
     return False
 
 
+def text_claims_missing_content(value: Any) -> bool:
+    return text_asserts_marked_defect(value, MISSING_CONTENT_CLAIM_MARKERS)
+
+
 def text_claims_encoding_defect(value: Any) -> bool:
     return text_asserts_marked_defect(value, ENCODING_CLAIM_MARKERS)
 
@@ -327,8 +356,8 @@ def validate_assessment(
     errors: list[str] = []
     if not isinstance(assessment, dict):
         return ["semantic assessment must be a JSON object"]
-    if assessment.get("assessment_version") != "1.3":
-        errors.append("assessment_version must be 1.3")
+    if assessment.get("assessment_version") != "1.4":
+        errors.append("assessment_version must be 1.4")
     for field in ("assessment_model", "prompt_version"):
         if not nonempty_text(assessment.get(field)):
             errors.append(f"{field} is required")
@@ -362,7 +391,7 @@ def validate_assessment(
         else:
             scope = official_report.get("scope")
             scope = scope if isinstance(scope, dict) else {}
-            if context.get("context_version") != "1.0" \
+            if context.get("context_version") != "1.1" \
                     or context.get("assessment_target") != target:
                 errors.append(f"quality context for {target} has invalid metadata")
             if context.get("scope_fingerprint_sha256") != scope_fingerprint(scope):
@@ -427,6 +456,11 @@ def validate_assessment(
         if rating not in RATINGS:
             errors.append(f"{name}.rating must be one of {', '.join(sorted(RATINGS))}")
             continue
+        evidence_basis = row.get("evidence_basis")
+        if evidence_basis not in EVIDENCE_BASES:
+            errors.append(
+                f"{name}.evidence_basis must be one of {', '.join(sorted(EVIDENCE_BASES))}"
+            )
         evidence = row.get("evidence")
         missing_evidence = row.get("missing_evidence")
         if not isinstance(evidence, list):
@@ -453,6 +487,8 @@ def validate_assessment(
                 "quote_or_value, and value_sha256"
             )
         if rating == "NOT_EVALUATED":
+            if evidence_basis != "EVIDENCE_GAP":
+                errors.append(f"{name}.evidence_basis must be EVIDENCE_GAP when NOT_EVALUATED")
             if evidence:
                 errors.append(f"{name}.evidence must be empty when NOT_EVALUATED")
             if not any(nonempty_text(item) for item in missing_evidence):
@@ -463,6 +499,10 @@ def validate_assessment(
                     "localization_quality native reviewer absence is not missing Listing evidence"
                 )
         else:
+            if evidence_basis not in {"OBSERVED_CONTENT", "OBSERVED_ABSENCE"}:
+                errors.append(
+                    f"{name}.evidence_basis must be observed evidence when evaluated"
+                )
             if not nonempty_text(row.get("rationale")):
                 errors.append(f"{name}.rationale is required for an evaluated rating")
             if not evidence or not valid_evidence:
@@ -472,6 +512,11 @@ def validate_assessment(
                 )
             if rating == "STRONG" and missing_evidence:
                 errors.append(f"{name}.missing_evidence must be empty when STRONG")
+            if text_claims_missing_content(row.get("rationale")) \
+                    and evidence_basis != "OBSERVED_ABSENCE":
+                errors.append(
+                    f"{name} missing-content claim requires OBSERVED_ABSENCE evidence"
+                )
             if name == "clarity_and_readability" \
                     and text_claims_encoding_defect(row.get("rationale")) \
                     and not any(
@@ -643,9 +688,28 @@ def derive_quality(dimensions: dict[str, Any]) -> tuple[str, str]:
     return "ADEQUATE", completeness
 
 
+def assessment_content_evidence(
+        official_report: dict[str, Any], assessment: dict[str, Any],
+) -> dict[str, Any]:
+    contexts = official_report.get("quality_contexts")
+    target = str(assessment.get("assessment_target") or "").upper()
+    context = contexts.get(target) \
+        if isinstance(contexts, dict) else None
+    evidence = context.get("content_evidence") if isinstance(context, dict) else None
+    return copy.deepcopy(evidence) if isinstance(evidence, dict) else {}
+
+
+def combined_quality_completeness(
+        dimension_completeness: str, content_evidence: dict[str, Any],
+) -> str:
+    return "COMPLETE" if dimension_completeness == "COMPLETE" \
+        and content_evidence.get("coverage") == "COMPLETE" else "PARTIAL"
+
+
 def derive_quality_score(
         dimensions: dict[str, Any], assessment: dict[str, Any],
         scope: dict[str, Any] | None = None,
+        content_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     evaluated_rows = [
         (name, dimensions[name]["rating"])
@@ -655,8 +719,10 @@ def derive_quality_score(
     evaluated = [rating for _, rating in evaluated_rows]
     dimension_mask = [name for name, _ in evaluated_rows]
     weak_dimensions = [name for name, rating in evaluated_rows if rating == "WEAK"]
+    content_evidence = content_evidence or {}
+    source_complete = content_evidence.get("coverage") == "COMPLETE"
     status = (
-        "FULL" if len(evaluated) == len(DIMENSIONS)
+        "FULL" if len(evaluated) == len(DIMENSIONS) and source_complete
         else "PARTIAL" if len(evaluated) >= MIN_SCORED_DIMENSIONS
         else "NOT_SCORED"
     )
@@ -671,8 +737,12 @@ def derive_quality_score(
         "structurally_comparable": status == "FULL",
         "comparison_rule": "BOTH_FULL_AND_SAME_COMPARISON_COHORT",
         "comparison_cohort_sha256": comparison_cohort_sha256(
-            assessment, SCORE_RUBRIC_VERSION, EVIDENCE_POLICY_VERSION, scope
+            assessment, SCORE_RUBRIC_VERSION, EVIDENCE_POLICY_VERSION, scope,
+            content_evidence,
         ),
+        "content_source_type": content_evidence.get("source_type"),
+        "content_scope": content_evidence.get("content_scope"),
+        "content_coverage": content_evidence.get("coverage"),
         "evaluated_dimensions": len(evaluated),
         "total_dimensions": len(DIMENSIONS),
         "minimum_dimensions_required": MIN_SCORED_DIMENSIONS,
@@ -734,8 +804,14 @@ def build_executive_summary(
     quality_action = primary_recommendation(assessment.get("recommendations") or [], quality_reason)
     official_reason = primary_official_finding(official_report)
     official_primary_action = official_action(official_reason, official_report)
-    score = derive_quality_score(assessment["dimensions"], assessment, scope)
-    _, quality_completeness = derive_quality(assessment["dimensions"])
+    content_evidence = assessment_content_evidence(official_report, assessment)
+    score = derive_quality_score(
+        assessment["dimensions"], assessment, scope, content_evidence
+    )
+    _, dimension_completeness = derive_quality(assessment["dimensions"])
+    quality_completeness = combined_quality_completeness(
+        dimension_completeness, content_evidence
+    )
     official_blocker = bool(
         official_reason and official_reason.get("status") == "OFFICIAL_ERROR"
     )
@@ -758,6 +834,7 @@ def build_executive_summary(
             "validation_completeness": official_report["official_validation_completeness"],
         },
         "quality_verdict": verdict,
+        "content_evidence": content_evidence,
         "evaluated_dimension_average": score,
         "primary_reason": operational_reason,
         "primary_action": operational_action,
@@ -768,6 +845,7 @@ def build_executive_summary(
         "content_quality": {
             "verdict": verdict,
             "evidence_completeness": quality_completeness,
+            "content_evidence": copy.deepcopy(content_evidence),
             "evaluated_dimension_average": copy.deepcopy(score),
             "primary_reason": copy.deepcopy(quality_reason),
             "primary_action": copy.deepcopy(quality_action),
@@ -798,7 +876,11 @@ def merge_report(official_report: Any, assessment: Any) -> tuple[dict[str, Any],
         return {"merge_status": "SYSTEM_ERROR", "errors": errors}, False
 
     result = copy.deepcopy(official_report)
-    verdict, completeness = derive_quality(assessment["dimensions"])
+    verdict, dimension_completeness = derive_quality(assessment["dimensions"])
+    content_evidence = assessment_content_evidence(official_report, assessment)
+    completeness = combined_quality_completeness(
+        dimension_completeness, content_evidence
+    )
     evidence_policy, _ = evaluate_evidence_policy(assessment, official_report)
     result.update({
         "merge_status": "OK",
@@ -808,6 +890,7 @@ def merge_report(official_report: Any, assessment: Any) -> tuple[dict[str, Any],
             for name in DIMENSIONS
         },
         "quality_evidence_completeness": completeness,
+        "quality_content_evidence": content_evidence,
         "quality_evidence_policy": evidence_policy,
         "semantic_assessment": assessment,
         "quality_assessment_trace": {

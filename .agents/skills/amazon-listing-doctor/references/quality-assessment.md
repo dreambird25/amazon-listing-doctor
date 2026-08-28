@@ -17,7 +17,7 @@ Run `diagnose_listing.py` first. Select exactly one `quality_contexts.CURRENT` o
 
 - `assessment_target`;
 - `assessment_locale`, exactly matching `scope.locale`;
-- `evidence_policy_version=1.0`;
+- `evidence_policy_version=1.1`;
 - `scope_fingerprint_sha256`;
 - `content_sha256`;
 - `evidence_manifest_sha256`;
@@ -27,13 +27,13 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 
 ```json
 {
-  "assessment_version": "1.3",
+  "assessment_version": "1.4",
   "assessment_model": "MODEL_IDENTIFIER",
-  "prompt_version": "quality-v1.5.1",
+  "prompt_version": "quality-v1.5.4",
   "assessed_at": "2026-01-01T00:00:00Z",
   "assessment_target": "CURRENT",
   "assessment_locale": "en_US",
-  "evidence_policy_version": "1.0",
+  "evidence_policy_version": "1.1",
   "scope_fingerprint_sha256": "SCOPE_SHA256",
   "content_sha256": "CONTENT_SHA256",
   "official_report_sha256": "REPORT_SHA256",
@@ -41,6 +41,7 @@ Every evaluated dimension must cite a scalar value from the selected context's `
   "dimensions": {
     "content_completeness": {
       "rating": "ADEQUATE",
+      "evidence_basis": "OBSERVED_ABSENCE",
       "rationale": "Core content is present, but variation evidence is absent.",
       "evidence": [{
         "field_path": "$.current_content.title",
@@ -51,6 +52,7 @@ Every evaluated dimension must cite a scalar value from the selected context's `
     },
     "clarity_and_readability": {
       "rating": "NOT_EVALUATED",
+      "evidence_basis": "EVIDENCE_GAP",
       "rationale": "",
       "evidence": [],
       "missing_evidence": ["localized title and bullets"]
@@ -66,9 +68,17 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 }
 ```
 
-The abbreviated example shows field shape; the actual object must contain all seven dimensions. An evaluated dimension requires a rationale and manifest-bound evidence. `NOT_EVALUATED` requires non-empty `missing_evidence` and an empty `evidence` array. `STRONG` requires an empty `missing_evidence` array. `assessed_at` must include a timezone and cannot predate the official report's `data_as_of`.
+The abbreviated example shows field shape; the actual object must contain all seven dimensions. An evaluated dimension requires a rationale, manifest-bound evidence, and `evidence_basis=OBSERVED_CONTENT|OBSERVED_ABSENCE`. `NOT_EVALUATED` requires `evidence_basis=EVIDENCE_GAP`, non-empty `missing_evidence`, and an empty `evidence` array. `STRONG` requires an empty `missing_evidence` array. `assessed_at` must include a timezone and cannot predate the official report's `data_as_of`.
 
-## Dimension-specific Evidence Policy 1.0
+## Dimension-specific Evidence Policy 1.1
+
+The selected quality context also binds `content_evidence`: `source_type`, `content_scope`, `coverage`, and `missing_field_semantics`. Listings Items attributes are `SELLER_CONTRIBUTION`; they are not buyer-visible storefront observations. A file or pasted object is `SUPPLIED_CONTENT` unless its acquisition method proves a narrower scope. This metadata is included in the report hash and comparison cohort.
+
+- `OBSERVED_CONTENT` supports a claim about values present in the bound manifest.
+- `OBSERVED_ABSENCE` may support a missing-content claim only when `coverage=COMPLETE` and `missing_field_semantics=OBSERVED_ABSENT`.
+- `EVIDENCE_GAP` is required for `NOT_EVALUATED`; it never supports a scored claim.
+
+If source coverage is `PARTIAL` or `UNKNOWN`, omitted fields remain unknown. They cannot be described as missing from the storefront. Even when all seven dimensions receive ratings, the score remains `PARTIAL` unless the bound content source declares complete coverage.
 
 Matching any manifest path is not enough. Each evaluated dimension must meet its own minimum evidence shape:
 
@@ -100,11 +110,11 @@ For `localization_quality`, perform a basic language and marketplace review when
 
 `executive_summary.evaluated_dimension_average` uses `STRONG=10`, `ADEQUATE=7`, and `WEAK=3`, rounded to one decimal place. Its status is:
 
-- `FULL`: all seven dimensions evaluated; `structurally_comparable=true`;
+- `FULL`: all seven dimensions evaluated and source coverage is `COMPLETE`; `structurally_comparable=true`;
 - `PARTIAL`: five or six evaluated; the value is shown but `structurally_comparable=false`;
 - `NOT_SCORED`: fewer than five evaluated; no numeric value.
 
-The result also exposes `dimension_mask`, `weak_dimensions`, `comparison_rule`, and `comparison_cohort_sha256`. `FULL` only means that one report has all seven dimensions. Two score values may be compared only when both are `FULL` and their cohort hashes match. The cohort binds assessment model, prompt, assessment contract, score rubric, Evidence Policy, target, Marketplace, Product Type, requirements, parentage, and locale. The legacy `comparable` field remains `false` because a single report cannot prove a pairwise comparison condition.
+The result also exposes `dimension_mask`, `weak_dimensions`, `content_source_type`, `content_scope`, `content_coverage`, `comparison_rule`, and `comparison_cohort_sha256`. `FULL` only means that one report has all seven dimensions and complete declared source coverage. Two score values may be compared only when both are `FULL` and their cohort hashes match. The cohort binds assessment model, prompt, assessment contract, score rubric, Evidence Policy, target, Marketplace, Product Type, requirements, parentage, locale, content source type, content scope, coverage, and missing-field semantics. The legacy `comparable` field remains `false` because a single report cannot prove a pairwise comparison condition.
 
 A high average never hides a weak dimension or changes the verdict. `quality_score` remains a compatibility alias for the same object. The rubric is `1.1`, is marked `INTERNAL_HEURISTIC` and `official=false`, and does not predict indexing, ranking, traffic, conversion, or sales.
 
