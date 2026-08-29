@@ -35,7 +35,11 @@ class RenderReportTest(unittest.TestCase):
             "title": "Example Brand Bottle",
             "bullets": ["Leak-resistant lid for daily use."],
             "description": "A reusable bottle for commuting and workouts.",
-            "images": [{"url": "https://example.invalid/main.jpg", "is_main": True}],
+            "images": [{
+                "url": "https://example.invalid/main.jpg",
+                "is_main": True,
+                "visual_observation": "A single bottle is visible on a plain background.",
+            }],
             "attributes": {"capacity": [{"value": 24, "unit": "oz"}]},
         }
         report = {
@@ -92,7 +96,8 @@ class RenderReportTest(unittest.TestCase):
                 "$.current_content.bullets[0]", "Leak-resistant lid for daily use."
             )],
             "image_information_coverage": [evidence(
-                "$.current_content.images[0].url", "https://example.invalid/main.jpg"
+                "$.current_content.images[0].visual_observation",
+                "A single bottle is visible on a plain background.",
             )],
             "cross_field_consistency": [
                 evidence("$.current_content.title", "Example Brand Bottle"),
@@ -125,7 +130,7 @@ class RenderReportTest(unittest.TestCase):
             "assessed_at": "2026-01-01T00:00:00Z",
             "assessment_target": "CURRENT",
             "assessment_locale": "en_US",
-            "evidence_policy_version": "1.1",
+            "evidence_policy_version": "1.2",
             "scope_fingerprint_sha256": report["quality_contexts"]["CURRENT"]["scope_fingerprint_sha256"],
             "content_sha256": report["quality_contexts"]["CURRENT"]["content_sha256"],
             "official_report_sha256": official_report_sha256(report),

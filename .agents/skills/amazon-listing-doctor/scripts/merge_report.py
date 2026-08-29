@@ -23,6 +23,7 @@ from quality_contract import (
     valid_sha256,
 )
 from quality_policy import EVIDENCE_POLICY_VERSION, evaluate_evidence_policy
+from cli_output import emit_utf8
 from summary_contract import official_action, primary_official_finding
 
 
@@ -949,6 +950,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Merge Listing official and content-quality reports")
     parser.add_argument("--official-report", type=Path, required=True)
     parser.add_argument("--semantic-assessment", type=Path, required=True)
+    parser.add_argument("--output", type=Path, help="Write UTF-8 JSON to this file")
     return parser.parse_args()
 
 
@@ -964,7 +966,7 @@ def main() -> int:
             "errors": [f"could not read input: {type(exc).__name__}: {exc}"],
         }
         valid = False
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    emit_utf8(json.dumps(result, ensure_ascii=False, indent=2), args.output)
     return 0 if valid else 2
 
 

@@ -24,6 +24,7 @@ Keep two outputs:
 ## Choose the dataset mode
 
 - `observation`: no expected labels are required. Use it to measure aggregate gate distributions and deterministic reruns without claiming correctness.
+- `quality-observation`: every sample contains a bound semantic `assessment`, but no expected quality label is required. Use it to aggregate verdict, score coverage, dimension ratings, weak dimensions, candidate availability, merge failures, and deterministic reruns without claiming correctness.
 - `golden-official`: every sample must contain `expected` with at least one official gate field. Missing or unknown expectation fields make the batch invalid.
 - `golden-quality`: every sample must contain a bound semantic `assessment` plus `expected_quality` with at least one supported quality field or `score_range`. Missing or unknown expectation fields make the batch invalid.
 
@@ -53,6 +54,17 @@ python scripts/evaluate_batch.py \
 ```
 
 The command emits aggregate gate distributions, expectation mismatch counts, and deterministic-rerun status. Without a private key, sample references are non-identifying row indexes such as `sample-000001`; they cannot be joined across reordered datasets. If stable cross-run references are required, set a secret that never enters the repository or logs:
+
+For an unlabeled quality observation, store `input + assessment` outside the repository and run:
+
+```bash
+python scripts/evaluate_batch.py \
+  --file /private/path/listing-quality-observation.jsonl \
+  --mode quality-observation \
+  --output /private/path/quality-observation-result.json
+```
+
+The quality-observation result contains only aggregate distributions and non-identifying merge-failure references. It never emits Listing text, raw identifiers, assessment prose, or raw merge errors.
 
 ```bash
 export LISTING_DOCTOR_SAMPLE_REF_KEY='replace-with-at-least-32-random-bytes'

@@ -43,7 +43,15 @@ class MergeReportTest(unittest.TestCase):
             "title": "Example Brand Bottle",
             "bullets": ["Leak-resistant lid for daily use."],
             "description": "A reusable bottle for commuting and workouts.",
-            "images": [{"url": "https://example.invalid/main.jpg", "is_main": True}],
+            "images": [{
+                "url": "https://example.invalid/main.jpg",
+                "is_main": True,
+                "width": 1600,
+                "height": 1600,
+                "white_background": True,
+                "watermark": False,
+                "visual_observation": "A single bottle is visible on a plain background.",
+            }],
             "attributes": {"capacity": [{"value": 24, "unit": "oz"}]},
         }
         report = {
@@ -96,7 +104,10 @@ class MergeReportTest(unittest.TestCase):
                 evidence("$.current_content.bullets[0]", "Leak-resistant lid for daily use."),
             ],
             "image_information_coverage": [
-                evidence("$.current_content.images[0].url", "https://example.invalid/main.jpg"),
+                evidence(
+                    "$.current_content.images[0].visual_observation",
+                    "A single bottle is visible on a plain background.",
+                ),
             ],
             "cross_field_consistency": [
                 evidence("$.current_content.title", "Example Brand Bottle"),
@@ -113,7 +124,7 @@ class MergeReportTest(unittest.TestCase):
             "assessed_at": "2026-01-01T00:00:00Z",
             "assessment_target": "CURRENT",
             "assessment_locale": "en_US",
-            "evidence_policy_version": "1.1",
+            "evidence_policy_version": "1.2",
             "scope_fingerprint_sha256": context["scope_fingerprint_sha256"],
             "content_sha256": context["content_sha256"],
             "official_report_sha256": official_report_sha256(report),
@@ -140,7 +151,7 @@ class MergeReportTest(unittest.TestCase):
         self.assertEqual("STRONG", merged["quality_verdict"])
         self.assertEqual("COMPLETE", merged["quality_evidence_completeness"])
         self.assertTrue(merged["quality_evidence_policy"]["passed"])
-        self.assertEqual("1.1", merged["quality_evidence_policy"]["version"])
+        self.assertEqual("1.2", merged["quality_evidence_policy"]["version"])
         self.assertEqual("NOT_EVALUATED", merged["performance_verdict"])
         self.assertEqual("PASS", merged["release_decision"])
         self.assertEqual(10.0, merged["executive_summary"]["quality_score"]["value"])
@@ -441,7 +452,33 @@ class MergeReportTest(unittest.TestCase):
         ]
         merged, valid = MODULE.merge_report(self.official_report(), assessment)
         self.assertFalse(valid)
-        self.assertTrue(any("IMAGE_PATH_REQUIRED" in error for error in merged["errors"]))
+        self.assertTrue(any(
+            "OBSERVED_IMAGE_CONTENT_REQUIRED" in error for error in merged["errors"]
+        ))
+
+        report = self.official_report()
+        technical_metadata = {
+            "$.current_content.images[0].url": "https://example.invalid/main.jpg",
+            "$.current_content.images[0].is_main": True,
+            "$.current_content.images[0].width": 1600,
+            "$.current_content.images[0].height": 1600,
+            "$.current_content.images[0].white_background": True,
+            "$.current_content.images[0].watermark": False,
+        }
+        for path, value in technical_metadata.items():
+            with self.subTest(path=path):
+                assessment = self.assessment(report=report)
+                assessment["dimensions"]["image_information_coverage"]["evidence"] = [{
+                    "field_path": path,
+                    "quote_or_value": value,
+                    "value_sha256": sha256_json(value),
+                }]
+                merged, valid = MODULE.merge_report(report, assessment)
+                self.assertFalse(valid)
+                self.assertTrue(any(
+                    "OBSERVED_IMAGE_CONTENT_REQUIRED" in error
+                    for error in merged["errors"]
+                ))
 
         assessment = self.assessment()
         assessment["dimensions"]["cross_field_consistency"]["evidence"] = [

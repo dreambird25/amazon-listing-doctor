@@ -2,6 +2,31 @@
 
 本项目采用语义化版本。版本记录描述公共契约和行为变化，不登记任何接入方私有实现或数据。
 
+## [未发布]
+
+### 仓库归属
+
+- 仓库从 GitHub Fork 网络中独立，保留完整 Git 历史以及 README 中的上游项目链接。
+- 保留原 MIT 版权声明，增加 `dreambird25` 及贡献者对修改与新增代码的版权声明，并新增 `NOTICE.md` 说明来源与归属。
+
+## [1.6.0] - 2026-08-30
+
+### 图片证据边界
+
+- Evidence Policy 升级到 1.2；`image_information_coverage` 只有绑定实际查看画面后记录的 `images[N].visual_observation` 才能评分。
+- 图片 URL、主图标记、宽高、背景和水印等定位或技术元数据不再冒充图片内容证据；缺少画面观察时必须返回 `NOT_EVALUATED + EVIDENCE_GAP`。
+
+### 私有批量观察与 UTF-8 输出
+
+- 新增 `quality-observation` 模式：接收私有 `input + assessment`，无须人工期望标签即可聚合质量结论、评分覆盖、维度评级、弱项、候选值可用性和合并失败；输出不含产品正文、原始标识、评估自由文本或原始合并错误。
+- `diagnose_listing.py`、`merge_report.py`、`render_report.py` 与 `evaluate_batch.py` 新增显式 `--output`，由 Python 直接写 UTF-8 文件，避免 Windows Shell 重定向损坏中文。
+
+### 实践与验证
+
+- 使用 100 条北美与欧洲私有只读 Listing 完成无标签质量观察；确定性报告与语义合并全部完成，实践暴露出的 URL-only 图片证据缺口已成为合成回归规则。
+- 无标签观察只证明行为与安全降级，不作为人工 Golden 标签；原始记录、身份、单条结果和产品正文均未进入公共仓库。
+- 行为测试增加到 129 个，覆盖图片画面证据边界、无标签质量聚合、隐私安全失败输出及四个核心 CLI 的显式 UTF-8 文件写入。
+
 ## [1.5.5] - 2026-08-28
 
 ### 用户报告信息密度
@@ -73,13 +98,6 @@
 - 默认中文简洁 Markdown 不再追加 `FULL`、`NEEDS_IMPROVEMENT`、`NOT_EVALUATED`、`COMPLETE` 等英文状态，也不展示稳定错误码或 Amazon 原始外语消息。
 - 内部稳定 code 与原始消息继续保留在 `--view detailed` 审计视图，不改变机器契约、官方门禁或确定性判断。
 - 行为测试增加到 109 个，新增中文简洁视图不泄露机器状态 code 的覆盖。
-
-## [未发布]
-
-### 仓库归属
-
-- 仓库从 GitHub Fork 网络中独立，保留完整 Git 历史以及 README 中的上游项目链接。
-- 保留原 MIT 版权声明，增加 `dreambird25` 及贡献者对修改与新增代码的版权声明，并新增 `NOTICE.md` 说明来源与归属。
 
 ## [1.5.0] - 2026-08-28
 

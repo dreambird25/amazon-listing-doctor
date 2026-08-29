@@ -4,7 +4,7 @@
 
 本项目基于 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的 MIT 开源版本演进，现作为独立仓库维护。完整 Git 历史继续保留以追溯来源；原项目版权与许可声明保留在 [`LICENSE`](LICENSE)，修改与新增代码的归属说明见 [`NOTICE.md`](NOTICE.md)。仓库不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
-当前版本：**v1.5.5**。本版在默认简洁报告中新增“原始值 / 候选值”对照表，详细报告将七维结果与优化建议改为高密度表格；候选值仍必须来自已验证的事实绑定，没有可靠候选时会明确标注“暂未生成”。详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前版本：**v1.6.0**。本版要求图片内容评分绑定实际画面观察，增加无标签的批量质量观察模式，并为核心 CLI 增加显式 UTF-8 文件输出，避免多语言报告经过 Shell 重定向后损坏。详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 它回答三个不同问题
 
@@ -59,11 +59,11 @@ https://github.com/dreambird25/amazon-listing-doctor/tree/main/.agents/skills/am
 
 ## 生产使用结论
 
-v1.5.5 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。默认报告分别展示内容质量原因/行动、原始值/候选值和官方证据原因/行动，并明确显示内容来自买家前台、卖家贡献还是其他输入范围；没有可靠候选时不会自动编造。私有语义质检默认使用新鲜短上下文，数据采集仍由受控父环境完成。
+v1.6.0 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。默认报告分别展示内容质量原因/行动、原始值/候选值和官方证据原因/行动，并明确显示内容来自买家前台、卖家贡献还是其他输入范围；没有可靠候选时不会自动编造。图片 URL 与技术元数据不会再冒充画面内容证据。私有语义质检默认使用新鲜短上下文，数据采集仍由受控父环境完成。
 
 无人值守自动放行仍需由接入系统补齐：完整 Draft 2019-09 + Amazon vocabulary PTD 校验、Preview 独立限流、授权提交和提交后 issues/status 对账。Amazon 明确说明 Preview 适合少量 Listing，不是高吞吐生产主链路。官方依据见 [`生产就绪研究`](docs/production-readiness-research.md)，接入门禁见 [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)。
 
-官方门禁曾使用固定随机种子的 30 条私有只读 Listing 验证，覆盖多个北美/欧洲站点和 Product Type；重复运行结果一致且没有引擎系统异常。该实践没有校准 v1.4 的质量 Evidence Policy、图片质量评级、比较 Cohort 或精确改写，当前这些质量能力主要由合成行为测试验证，真实人工 Quality Golden Set 仍在建设。公开仓库不保存任何私有记录、标识、单条引用或原始响应。
+官方门禁曾使用固定随机种子的 30 条私有只读 Listing 验证。v1.6.0 又使用 100 条北美与欧洲私有只读 Listing 完成无标签质量观察：确定性报告与语义合并均成功，并暴露出“只有图片定位/技术元数据、没有实际画面观察”的稳定证据缺口，因此收紧了图片 Evidence Policy。无标签观察只证明行为与降级边界，不等同人工正确性标签；真实人工 Quality Golden Set 仍在建设。公开仓库不保存任何私有记录、标识、单条引用、产品正文或原始响应。
 
 示例输入位于 [`examples`](.agents/skills/amazon-listing-doctor/examples/README.md)。
 
@@ -72,10 +72,10 @@ v1.5.5 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已
 根目录保留稳定 CLI：
 
 ```bash
-python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/examples/listing-valid.json
+python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/examples/listing-valid.json --output official-report.json
 ```
 
-核心脚本位于 Skill 内部，根 CLI 只是兼容入口。脚本只使用 Python 标准库，不联网、不写数据。
+核心脚本位于 Skill 内部，根 CLI 只是兼容入口。脚本只使用 Python 标准库，不联网，也不写外部系统或业务数据；只有显式传入 `--output` 时才写指定的报告文件，并固定使用 UTF-8。
 
 运行确定性 CLI 不需要 OpenAI API Key。通过 Codex 使用七维语义质量评估时，使用用户当前 Agent 环境；公共仓库不保存模型密钥。若其他系统自行调用模型，凭据和模型网关属于接入方私有配置。
 
@@ -86,21 +86,23 @@ python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/e
 中文报告与私有批量回归：
 
 ```bash
-python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown
-python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed
-python scripts/evaluate_batch.py --file private-observation.jsonl --mode observation
+python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown --output user-report.md
+python scripts/render_report.py --report merged-report.json --lang zh-CN --format markdown --view detailed --output audit-report.md
+python scripts/evaluate_batch.py --file private-observation.jsonl --mode observation --output official-observation.json
+python scripts/evaluate_batch.py --file private-quality-observation.jsonl --mode quality-observation --output quality-observation.json
 python scripts/evaluate_batch.py --file private-golden-dataset.jsonl --mode golden-official
 python scripts/evaluate_batch.py --file private-quality-golden.jsonl --mode golden-quality
 ```
 
-第一条命令默认输出简洁用户结论；`--view detailed` 输出完整审计报告，Markdown 与 JSON 都会重验内嵌语义评估，重复渲染仍可再次验证。`scope.locale` 决定 Listing 校验语言；`report_locale`/`--lang` 只决定展示语言。候选 Preview 的 `PASS` 展示为“候选预检通过”，绝不写成“发布成功”。批量工具的观测模式不要求标签，Golden 模式缺少预期值则直接失败；未配置私有 HMAC key 时仅输出无识别性行号。启用 HMAC 时，`LISTING_DOCTOR_SAMPLE_REF_KEY` 至少为 32 个 UTF-8 字节，样本引用与建议文本使用不同 HMAC Domain。
+第一条命令默认输出简洁用户结论；`--view detailed` 输出完整审计报告，Markdown 与 JSON 都会重验内嵌语义评估，重复渲染仍可再次验证。`scope.locale` 决定 Listing 校验语言；`report_locale`/`--lang` 只决定展示语言。候选 Preview 的 `PASS` 展示为“候选预检通过”，绝不写成“发布成功”。`observation` 只聚合官方门禁，`quality-observation` 聚合已绑定评估的质量行为，两者都不要求人工标签；Golden 模式缺少预期值则直接失败。未配置私有 HMAC key 时仅输出无识别性行号。启用 HMAC 时，`LISTING_DOCTOR_SAMPLE_REF_KEY` 至少为 32 个 UTF-8 字节，样本引用与建议文本使用不同 HMAC Domain。
 
 内容质量由 Agent 按固定七维契约生成，再由确定性脚本验证和合并：
 
 ```bash
 python .agents/skills/amazon-listing-doctor/scripts/merge_report.py \
   --official-report official-report.json \
-  --semantic-assessment .agents/skills/amazon-listing-doctor/examples/semantic-assessment.json
+  --semantic-assessment .agents/skills/amazon-listing-doctor/examples/semantic-assessment.json \
+  --output merged-report.json
 ```
 
 默认简洁层的形态如下（占位数据）：

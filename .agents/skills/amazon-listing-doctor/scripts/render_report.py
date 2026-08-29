@@ -10,8 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cli_output import emit_utf8
 from merge_report import (
     assessment_content_evidence,
     build_executive_summary,
@@ -539,6 +539,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lang", choices=sorted(SUPPORTED_LOCALES), help="Display locale")
     parser.add_argument("--format", choices=("json", "markdown"), default="markdown")
     parser.add_argument("--view", choices=("concise", "detailed"), default="concise")
+    parser.add_argument("--output", type=Path, help="Write the UTF-8 report to this file")
     return parser.parse_args()
 
 
@@ -552,13 +553,17 @@ def main() -> int:
             else validated_detailed_report(report, locale) if args.format == "json"
             else render_markdown(report, locale, args.view)
         )
-        print(json.dumps(output, ensure_ascii=False, indent=2) if isinstance(output, dict) else output)
+        emit_utf8(
+            json.dumps(output, ensure_ascii=False, indent=2)
+            if isinstance(output, dict) else output,
+            args.output,
+        )
         return 0
     except Exception as exc:
-        print(json.dumps({
+        emit_utf8(json.dumps({
             "render_status": "SYSTEM_ERROR",
             "error": f"{type(exc).__name__}: {exc}",
-        }, ensure_ascii=False, indent=2))
+        }, ensure_ascii=False, indent=2), args.output)
         return 2
 
 

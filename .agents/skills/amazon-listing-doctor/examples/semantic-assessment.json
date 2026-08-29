@@ -1,15 +1,15 @@
 {
   "assessment_version": "1.4",
   "assessment_model": "example-semantic-model",
-  "prompt_version": "quality-v1.5.4",
+  "prompt_version": "quality-v1.6.0",
   "assessed_at": "2026-01-01T00:00:03Z",
   "assessment_target": "CURRENT",
   "assessment_locale": "en_US",
-  "evidence_policy_version": "1.1",
+  "evidence_policy_version": "1.2",
   "scope_fingerprint_sha256": "f3c5eef0a8e83663e754a246b48bc9508e64208d26a7d47d4abf69b2cfbac3fb",
-  "content_sha256": "cf2164ccd6be025569970edf7954d1969c54a9f73ae106b15fa24a2c35649f4a",
-  "official_report_sha256": "3b0c384966393f6a96f0b739c7f254311d98ca53edf36af795ebb9d7f3c69dbd",
-  "evidence_manifest_sha256": "ab2138998406117a45cec0e66369da1bf0c91974871eafa01d9c223a79bfeea9",
+  "content_sha256": "248aa8317ecdc3853bc18d71cb1b04dc9d4ab9f4065519acbff94acf57d3e75b",
+  "official_report_sha256": "a049e7263dc9ae073c55c4fbf8c3ab9e85db020a98cd570dba8fd0436d3d7c12",
+  "evidence_manifest_sha256": "62e3c1545d509982251af44f203b2ac163210a03159bc5bfad9f0f6844a4d713",
   "dimensions": {
     "content_completeness": {
       "rating": "WEAK",
@@ -67,9 +67,9 @@
       "evidence_basis": "OBSERVED_ABSENCE",
       "rationale": "Only one main-image record is supplied, so use, feature, and packaging views are absent.",
       "evidence": [{
-        "field_path": "$.current_content.images[0].url",
-        "quote_or_value": "https://example.invalid/main.jpg",
-        "value_sha256": "505c0f009799f426d51c9cc1f79cce6531cccc3c6e9cec39e5de60d30a4f8e50"
+        "field_path": "$.current_content.images[0].visual_observation",
+        "quote_or_value": "A single stainless-steel bottle is visible on a plain white background.",
+        "value_sha256": "249def03fce78ce87592afcbba071e86f78008b12be91d7e93480e06a61f7543"
       }],
       "missing_evidence": ["secondary image set"]
     },

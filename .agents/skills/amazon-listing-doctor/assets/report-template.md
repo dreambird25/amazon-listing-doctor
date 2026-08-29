@@ -63,7 +63,7 @@
 
 ## 内部优化建议
 
-按七个质量维度列出 rating、Evidence Policy rule code、理由和 Listing 原文或图片元数据证据。精确改写还要列出每个事实绑定的原始值、字段路径和值哈希。逐项列出 `HEURISTIC_ADVICE`，明确“不参与发布门禁”。不得承诺排名、流量或推荐结果。
+按七个质量维度列出 rating、Evidence Policy rule code、理由和 Listing 原文或经实际查看得到的图片 `visual_observation`。图片 URL、尺寸、主图标记、背景和水印等技术元数据不得单独支撑图片内容评分。精确改写还要列出每个事实绑定的原始值、字段路径和值哈希。逐项列出 `HEURISTIC_ADVICE`，明确“不参与发布门禁”。不得承诺排名、流量或推荐结果。
 
 ## 未评估与系统异常
 

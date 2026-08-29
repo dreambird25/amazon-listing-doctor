@@ -4,7 +4,7 @@ A repo-discoverable Codex Skill for evidence-first Amazon Listing diagnostics. I
 
 This public fork of [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) contains no company-specific code, endpoints, schemas, account identifiers, SKUs, ASINs, credentials, or runtime configuration.
 
-Current version: **v1.5.5**. Concise reports now include an original-value/candidate-value comparison, while detailed quality dimensions and recommendations use compact tables. Exact candidates still require validated fact bindings; unavailable candidates are stated explicitly instead of being invented. See [`CHANGELOG.md`](CHANGELOG.md).
+Current version: **v1.6.0**. Image-content ratings now require an observed visual description, unlabeled batch quality observation is supported, and core CLIs can write UTF-8 artifacts directly instead of relying on shell redirection. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Three independent conclusions
 
@@ -55,19 +55,19 @@ The public version does not authenticate to Seller Central or call SP-API. A use
 
 ## Production status
 
-v1.5.5 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass. User reports compare bound original evidence with an exact validated candidate when one exists, and explicitly mark the candidate as unavailable otherwise.
+v1.6.0 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass. User reports compare bound original evidence with an exact validated candidate when one exists, and explicitly mark the candidate as unavailable otherwise. Image URLs and technical metadata no longer masquerade as observed image content.
 
 Unattended automatic release still requires a full Draft 2019-09 validator with Amazon vocabulary support, independent Preview rate limiting, an authorized submission workflow, and post-submission issue/status reconciliation in the integrating system. See the [official-source production research](docs/production-readiness-research.md) and [production integration guide](.agents/skills/amazon-listing-doctor/references/production-readiness.md).
 
-A fixed-seed, read-only run of 30 private Listings across North American/European marketplaces and Product Types validated the official-gate behavior: reruns were deterministic and produced no engine system errors. It did not calibrate the v1.4 quality Evidence Policy, image ratings, comparison cohorts, or exact rewrites. Those quality behaviors currently rely mainly on synthetic tests while a human-reviewed Quality Golden Set is built. No private record, identifier, per-item reference, or raw response is stored here.
+A fixed-seed, read-only run of 30 private Listings validated official-gate behavior. v1.6.0 additionally ran an unlabeled quality observation over 100 private North American and European Listings: deterministic reports and semantic merges completed, and the run exposed a repeatable evidence gap where image locator/technical metadata existed without an actual visual observation. Unlabeled observation proves behavior and degradation boundaries, not human-reviewed correctness; a Quality Golden Set is still being built. No private record, identifier, per-item reference, product text, or raw response is stored here.
 
 ## Developer CLI
 
 ```bash
-python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/examples/listing-valid.json
+python scripts/diagnose_listing.py --file .agents/skills/amazon-listing-doctor/examples/listing-valid.json --output official-report.json
 ```
 
-The root command is a compatibility wrapper around the canonical Skill script. Both deterministic scripts use only the Python standard library, make no network calls, and perform no writes.
+The root command is a compatibility wrapper around the canonical Skill script. The CLIs use only the Python standard library, make no network calls, and never write external systems or business data. They write a report file only when `--output` is explicitly supplied, always as UTF-8.
 
 The deterministic CLI needs no OpenAI API key. When Codex performs the seven-dimension semantic assessment it uses the user's current Agent environment; no model credential is stored in this public repository. Other model integrations remain private adapter configuration.
 
@@ -76,14 +76,15 @@ The local PTD engine executes only supported length/item constraints and reports
 Unattended evidence also requires `requirementsEnforced=ENFORCED`; a valid external result against a `NOT_ENFORCED` Schema remains manual review.
 
 ```bash
-python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown
-python scripts/render_report.py --report merged-report.json --lang en --format markdown --view detailed
-python scripts/evaluate_batch.py --file private-observation.jsonl --mode observation
+python scripts/render_report.py --report official-report.json --lang zh-CN --format markdown --output user-report.md
+python scripts/render_report.py --report merged-report.json --lang en --format markdown --view detailed --output audit-report.md
+python scripts/evaluate_batch.py --file private-observation.jsonl --mode observation --output official-observation.json
+python scripts/evaluate_batch.py --file private-quality-observation.jsonl --mode quality-observation --output quality-observation.json
 python scripts/evaluate_batch.py --file private-golden-dataset.jsonl --mode golden-official
 python scripts/evaluate_batch.py --file private-quality-golden.jsonl --mode golden-quality
 ```
 
-The first command uses the concise default view; `--view detailed` renders the complete audit report and revalidates embedded quality fields for both Markdown and JSON, including a previously rendered Detailed JSON document. `scope.locale` controls Listing validation; `report_locale`/`--lang` controls display only. Candidate Preview `PASS` means “candidate preview passed,” never “published successfully.” Observation mode needs no labels; Golden modes fail when expected outcomes are absent. Batch output uses non-identifying row indexes unless a private HMAC key of at least 32 UTF-8 bytes is supplied; sample references and suggestion digests use separate HMAC domains.
+The first command uses the concise default view; `--view detailed` renders the complete audit report and revalidates embedded quality fields for both Markdown and JSON, including a previously rendered Detailed JSON document. `scope.locale` controls Listing validation; `report_locale`/`--lang` controls display only. Candidate Preview `PASS` means “candidate preview passed,” never “published successfully.” `observation` aggregates official gates, while `quality-observation` aggregates bound quality assessments; neither requires labels. Golden modes fail when expected outcomes are absent. Batch output uses non-identifying row indexes unless a private HMAC key of at least 32 UTF-8 bytes is supplied; sample references and suggestion digests use separate HMAC domains.
 
 The quality branch follows [`quality-assessment.md`](.agents/skills/amazon-listing-doctor/references/quality-assessment.md) and is validated and merged by `scripts/merge_report.py` inside the Skill. Official input/output is defined in [`report-contract.md`](.agents/skills/amazon-listing-doctor/references/report-contract.md).
 

@@ -15,6 +15,7 @@ from typing import Any
 
 from diagnose_listing import diagnose
 from merge_report import merge_report
+from cli_output import emit_utf8
 
 
 GATE_FIELDS = (
@@ -49,7 +50,10 @@ MODE_ALIASES = {
     "official-gates": "golden-official",
     "quality-summary": "golden-quality",
 }
-MODES = ("observation", "golden-official", "golden-quality", *MODE_ALIASES)
+MODES = (
+    "observation", "quality-observation", "golden-official", "golden-quality",
+    *MODE_ALIASES,
+)
 MIN_HMAC_KEY_BYTES = 32
 SAMPLE_REF_HMAC_DOMAIN = b"amazon-listing-doctor/sample-reference/v1\0"
 SUGGESTED_VALUE_HMAC_DOMAIN = b"amazon-listing-doctor/suggested-value/v1\0"
@@ -100,6 +104,11 @@ def quality_snapshot(
         "structurally_comparable": score.get("structurally_comparable"),
         "comparison_cohort_sha256": score.get("comparison_cohort_sha256"),
         "weak_dimensions": score.get("weak_dimensions") or [],
+        "evaluated_dimension_count": len(score.get("dimension_mask") or []),
+        "dimension_ratings": report.get("quality_dimensions") or {},
+        "candidate_available": bool((summary.get("change_preview") or {}).get(
+            "candidate_available"
+        )),
         "primary_reason_dimension": reason.get("dimension"),
         "primary_reason_source": reason.get("source"),
         "primary_reason_code": reason.get("code"),
@@ -147,7 +156,9 @@ def evaluate_samples(
         samples: list[Any], mode: str = "golden-official", sample_ref_key: str | None = None,
 ) -> tuple[dict[str, Any], bool]:
     normalized_mode = MODE_ALIASES.get(mode, mode)
-    if normalized_mode not in {"observation", "golden-official", "golden-quality"}:
+    if normalized_mode not in {
+            "observation", "quality-observation", "golden-official", "golden-quality",
+    }:
         raise ValueError(f"unsupported mode: {mode}")
     if sample_ref_key:
         private_hmac("key-validation", sample_ref_key, SAMPLE_REF_HMAC_DOMAIN)
@@ -160,7 +171,12 @@ def evaluate_samples(
         "score_status": Counter(),
         "structurally_comparable": Counter(),
         "weak_dimension_count": Counter(),
+        "evaluated_dimension_count": Counter(),
+        "candidate_available": Counter(),
     }
+    weak_dimension_distribution: Counter[str] = Counter()
+    dimension_rating_distributions: dict[str, Counter[str]] = {}
+    quality_merge_failures: list[dict[str, Any]] = []
     for index, sample in enumerate(samples):
         if not isinstance(sample, dict) or not isinstance(sample.get("input"), dict):
             malformed += 1
@@ -173,25 +189,34 @@ def evaluate_samples(
 
         if normalized_mode == "observation":
             continue
-        if normalized_mode == "golden-quality":
+        if normalized_mode in {"quality-observation", "golden-quality"}:
             expected_quality = sample.get("expected_quality")
-            if not valid_expected_fields(
+            if normalized_mode == "golden-quality" and not valid_expected_fields(
                     expected_quality, QUALITY_EXPECTED_FIELDS, {"score_range"}
             ):
                 malformed += 1
                 continue
             assessment = sample.get("assessment")
+            if not isinstance(assessment, dict):
+                malformed += 1
+                continue
             merged, valid_merge = merge_report(report, assessment)
             rerun, rerun_valid = merge_report(report, assessment)
             deterministic = deterministic and valid_merge == rerun_valid and merged == rerun
             if not valid_merge:
-                mismatches.append({
+                failure = {
                     "sample_ref": reference,
-                    "differences": {"merge_status": {
-                        "expected": "OK",
-                        "actual": merged.get("merge_status"),
-                    }},
-                })
+                    "merge_status": str(merged.get("merge_status") or "SYSTEM_ERROR"),
+                }
+                quality_merge_failures.append(failure)
+                if normalized_mode == "golden-quality":
+                    mismatches.append({
+                        "sample_ref": reference,
+                        "differences": {"merge_status": {
+                            "expected": "OK",
+                            "actual": failure["merge_status"],
+                        }},
+                    })
                 continue
             actual_quality = quality_snapshot(merged, sample_ref_key)
             quality_distributions["quality_verdict"][str(actual_quality["quality_verdict"])] += 1
@@ -202,6 +227,20 @@ def evaluate_samples(
             quality_distributions["weak_dimension_count"][
                 str(len(actual_quality["weak_dimensions"]))
             ] += 1
+            quality_distributions["evaluated_dimension_count"][
+                str(actual_quality["evaluated_dimension_count"])
+            ] += 1
+            quality_distributions["candidate_available"][
+                str(actual_quality["candidate_available"])
+            ] += 1
+            for dimension in actual_quality["weak_dimensions"]:
+                weak_dimension_distribution[str(dimension)] += 1
+            for dimension, rating in actual_quality["dimension_ratings"].items():
+                dimension_rating_distributions.setdefault(
+                    str(dimension), Counter()
+                )[str(rating)] += 1
+            if normalized_mode == "quality-observation":
+                continue
             differences = quality_differences(expected_quality, actual_quality)
             if differences:
                 mismatches.append({"sample_ref": reference, "differences": differences})
@@ -228,10 +267,19 @@ def evaluate_samples(
         "gate_distributions": {
             field: dict(sorted(counter.items())) for field, counter in distributions.items()
         },
-        "quality_distributions": {
-            field: dict(sorted(counter.items()))
-            for field, counter in quality_distributions.items()
-        } if normalized_mode == "golden-quality" else {},
+        "quality_distributions": ({
+            **{
+                field: dict(sorted(counter.items()))
+                for field, counter in quality_distributions.items()
+            },
+            "weak_dimensions": dict(sorted(weak_dimension_distribution.items())),
+            "dimension_ratings": {
+                dimension: dict(sorted(counter.items()))
+                for dimension, counter in sorted(dimension_rating_distributions.items())
+            },
+        } if normalized_mode in {"quality-observation", "golden-quality"} else {}),
+        "quality_merge_failure_count": len(quality_merge_failures),
+        "quality_merge_failures": quality_merge_failures,
         "mode": normalized_mode,
         "expectation_mismatch_count": len(mismatches),
         "mismatches": mismatches,
@@ -240,13 +288,15 @@ def evaluate_samples(
         "hmac_domain_separation": "V1" if sample_ref_key else "DISABLED",
         "privacy": "No input content or raw sample identifiers are emitted.",
     }
-    return result, bool(samples) and malformed == 0 and not mismatches and deterministic
+    return result, bool(samples) and malformed == 0 and not mismatches \
+        and not quality_merge_failures and deterministic
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate private Listing datasets")
     parser.add_argument("--file", type=Path, required=True, help="Private JSON/JSONL sample file")
     parser.add_argument("--mode", choices=MODES, default="golden-official")
+    parser.add_argument("--output", type=Path, help="Write UTF-8 aggregate JSON here")
     parser.add_argument(
         "--sample-ref-key-env",
         default="LISTING_DOCTOR_SAMPLE_REF_KEY",
@@ -263,7 +313,7 @@ def main() -> int:
     except Exception as exc:
         result = {"batch_status": "SYSTEM_ERROR", "error": f"{type(exc).__name__}: {exc}"}
         valid = False
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    emit_utf8(json.dumps(result, ensure_ascii=False, indent=2), args.output)
     return 0 if valid else 2
 
 

@@ -17,7 +17,7 @@ Run `diagnose_listing.py` first. Select exactly one `quality_contexts.CURRENT` o
 
 - `assessment_target`;
 - `assessment_locale`, exactly matching `scope.locale`;
-- `evidence_policy_version=1.1`;
+- `evidence_policy_version=1.2`;
 - `scope_fingerprint_sha256`;
 - `content_sha256`;
 - `evidence_manifest_sha256`;
@@ -29,11 +29,11 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 {
   "assessment_version": "1.4",
   "assessment_model": "MODEL_IDENTIFIER",
-  "prompt_version": "quality-v1.5.4",
+  "prompt_version": "quality-v1.6.0",
   "assessed_at": "2026-01-01T00:00:00Z",
   "assessment_target": "CURRENT",
   "assessment_locale": "en_US",
-  "evidence_policy_version": "1.1",
+  "evidence_policy_version": "1.2",
   "scope_fingerprint_sha256": "SCOPE_SHA256",
   "content_sha256": "CONTENT_SHA256",
   "official_report_sha256": "REPORT_SHA256",
@@ -70,7 +70,7 @@ Every evaluated dimension must cite a scalar value from the selected context's `
 
 The abbreviated example shows field shape; the actual object must contain all seven dimensions. An evaluated dimension requires a rationale, manifest-bound evidence, and `evidence_basis=OBSERVED_CONTENT|OBSERVED_ABSENCE`. `NOT_EVALUATED` requires `evidence_basis=EVIDENCE_GAP`, non-empty `missing_evidence`, and an empty `evidence` array. `STRONG` requires an empty `missing_evidence` array. `assessed_at` must include a timezone and cannot predate the official report's `data_as_of`.
 
-## Dimension-specific Evidence Policy 1.1
+## Dimension-specific Evidence Policy 1.2
 
 The selected quality context also binds `content_evidence`: `source_type`, `content_scope`, `coverage`, and `missing_field_semantics`. Listings Items attributes are `SELLER_CONTRIBUTION`; they are not buyer-visible storefront observations. A file or pasted object is `SUPPLIED_CONTENT` unless its acquisition method proves a narrower scope. This metadata is included in the report hash and comparison cohort.
 
@@ -88,11 +88,13 @@ Matching any manifest path is not enough. Each evaluated dimension must meet its
 | `clarity_and_readability` | a textual title, item highlight, bullet, description, attribute, or backend-term value |
 | `intent_coverage` | visible Listing text or a visible structured attribute; backend terms alone are insufficient |
 | `buyer_question_coverage` | visible Listing text or a structured attribute |
-| `image_information_coverage` | at least one `images[...]` path |
+| `image_information_coverage` | an observed image-content string at `images[N].visual_observation` |
 | `cross_field_consistency` | evidence from at least two top-level content modules |
 | `localization_quality` | visible text and `assessment_locale == scope.locale` |
 
 Evidence must support the specific defect named in the rationale, not merely identify the field. A claim about a replacement character, mojibake, control character, encoding artifact, debug stack, exception trace, or log residue must bind text that actually contains the suspicious character or technical sequence. A normal title or bullet is not evidence for one of these claims. Keep code-point or byte-length validation separate from readability: passing a declared length limit neither proves nor disproves an independent text-quality defect.
+
+Image URL, `is_main`, width, height, background, and watermark fields are locator or technical metadata. They can support deterministic technical checks, but they do not prove what the image communicates to a buyer. Populate `visual_observation` only after an authorized browser, image-capable worker, or human actually observes the scoped image. Without that field, `image_information_coverage` must use `NOT_EVALUATED + EVIDENCE_GAP`; do not infer image content from the URL or filename.
 
 For `localization_quality`, perform a basic language and marketplace review whenever the assessor can understand the scoped language. Lack of a separate native human reviewer is a limitation for publication-grade review, not missing Listing evidence and not by itself a reason for `NOT_EVALUATED`. Use `NOT_EVALUATED` only when the assessor genuinely lacks language capability or the bound Listing lacks enough scoped visible text; state which of those is missing.
 

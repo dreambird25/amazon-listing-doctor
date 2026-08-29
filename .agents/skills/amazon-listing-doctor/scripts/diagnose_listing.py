@@ -13,8 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cli_output import emit_utf8
 from quality_contract import build_quality_context, official_report_sha256
 
 
@@ -1850,6 +1850,7 @@ def parse_args() -> argparse.Namespace:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--file", type=Path, help="Input JSON file")
     group.add_argument("--data", help="Inline JSON")
+    parser.add_argument("--output", type=Path, help="Write UTF-8 JSON to this file")
     return parser.parse_args()
 
 
@@ -1877,7 +1878,7 @@ def main() -> int:
             f"Could not read or parse input: {type(exc).__name__}: {exc}",
             "INPUT",
         )], False, False)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    emit_utf8(json.dumps(report, ensure_ascii=False, indent=2), args.output)
     return exit_code(report)
 
 

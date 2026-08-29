@@ -7,11 +7,14 @@ import re
 from typing import Any
 
 
-EVIDENCE_POLICY_VERSION = "1.1"
+EVIDENCE_POLICY_VERSION = "1.2"
 EVIDENCE_BASES = {"OBSERVED_CONTENT", "OBSERVED_ABSENCE", "EVIDENCE_GAP"}
 VISIBLE_TEXT_MODULES = {"title", "item_highlight", "bullets", "description", "attributes"}
 TEXT_MODULES = VISIBLE_TEXT_MODULES | {"backend_search_terms"}
 CONTENT_PATH = re.compile(r"^\$\.(?:current_content|candidate\.content)\.([^.[\]]+)")
+IMAGE_VISUAL_OBSERVATION_PATH = re.compile(
+    r"^\$\.(?:current_content|candidate\.content)\.images\[\d+\]\.visual_observation$"
+)
 
 
 def content_module(path: Any) -> str | None:
@@ -93,8 +96,8 @@ def evaluate_evidence_policy(
             passed = bool(string_modules & VISIBLE_TEXT_MODULES) or "attributes" in modules
             rule_code = "BUYER_DECISION_CONTENT_REQUIRED"
         elif name == "image_information_coverage":
-            passed = "images" in modules
-            rule_code = "IMAGE_PATH_REQUIRED"
+            passed = any(IMAGE_VISUAL_OBSERVATION_PATH.fullmatch(path) for path in string_paths)
+            rule_code = "OBSERVED_IMAGE_CONTENT_REQUIRED"
         elif name == "cross_field_consistency":
             passed = len(modules) >= 2
             rule_code = "TWO_CONTENT_MODULES_REQUIRED"

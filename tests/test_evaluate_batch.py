@@ -83,8 +83,62 @@ class EvaluateBatchTest(unittest.TestCase):
         self.assertEqual("observation", result["mode"])
         self.assertEqual(0, result["malformed_count"])
 
+    def test_quality_observation_aggregates_without_expected_quality(self):
+        private_marker = "PRIVATE-ASIN-OR-SKU"
+        examples = ROOT / ".agents" / "skills" / "amazon-listing-doctor" / "examples"
+        listing = json.loads((examples / "listing-valid.json").read_text(encoding="utf-8"))
+        assessment = json.loads(
+            (examples / "semantic-assessment.json").read_text(encoding="utf-8")
+        )
+
+        result, valid = MODULE.evaluate_samples([{
+            "sample_id": private_marker,
+            "input": listing,
+            "assessment": assessment,
+        }], "quality-observation")
+
+        self.assertTrue(valid)
+        self.assertEqual("quality-observation", result["mode"])
+        self.assertEqual(0, result["expectation_mismatch_count"])
+        self.assertEqual(0, result["quality_merge_failure_count"])
+        self.assertEqual(
+            {"NEEDS_IMPROVEMENT": 1},
+            result["quality_distributions"]["quality_verdict"],
+        )
+        self.assertEqual(
+            {"WEAK": 1},
+            result["quality_distributions"]["dimension_ratings"]
+            ["image_information_coverage"],
+        )
+        self.assertEqual(
+            {"False": 1}, result["quality_distributions"]["candidate_available"]
+        )
+        self.assertNotIn(private_marker, str(result))
+        self.assertNotIn(listing["content"]["title"], str(result))
+
+    def test_quality_observation_rejects_missing_or_invalid_assessment_safely(self):
+        result, valid = MODULE.evaluate_samples(
+            [{"input": {}}], "quality-observation"
+        )
+        self.assertFalse(valid)
+        self.assertEqual(1, result["malformed_count"])
+
+        private_marker = "PRIVATE-ASIN-OR-SKU"
+        result, valid = MODULE.evaluate_samples([{
+            "sample_id": private_marker,
+            "input": {},
+            "assessment": {"private_text": "DO-NOT-EMIT"},
+        }], "quality-observation")
+        self.assertFalse(valid)
+        self.assertEqual(1, result["quality_merge_failure_count"])
+        self.assertEqual("SYSTEM_ERROR", result["quality_merge_failures"][0]["merge_status"])
+        self.assertNotIn(private_marker, str(result))
+        self.assertNotIn("DO-NOT-EMIT", str(result))
+
     def test_empty_dataset_never_reports_success(self):
-        for mode in ("observation", "golden-official", "golden-quality"):
+        for mode in (
+                "observation", "quality-observation", "golden-official", "golden-quality",
+        ):
             with self.subTest(mode=mode):
                 result, valid = MODULE.evaluate_samples([], mode)
                 self.assertFalse(valid)
