@@ -4,7 +4,7 @@ A repo-discoverable Codex Skill for evidence-first Amazon Listing diagnostics. I
 
 This public fork of [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) contains no company-specific code, endpoints, schemas, account identifiers, SKUs, ASINs, credentials, or runtime configuration.
 
-Current version: **v1.6.0**. Image-content ratings now require an observed visual description, unlabeled batch quality observation is supported, and core CLIs can write UTF-8 artifacts directly instead of relying on shell redirection. See [`CHANGELOG.md`](CHANGELOG.md).
+Current version: **v1.6.1**. The user report now separates the current issue snapshot, PTD validation, candidate checks, and release decision, while the Listings Items title-normalization rule safely falls back to the exact-Marketplace summary when the scoped attribute is absent. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Three independent conclusions
 
@@ -55,11 +55,11 @@ The public version does not authenticate to Seller Central or call SP-API. A use
 
 ## Production status
 
-v1.6.0 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass. User reports compare bound original evidence with an exact validated candidate when one exists, and explicitly mark the candidate as unavailable otherwise. Image URLs and technical metadata no longer masquerade as observed image content.
+v1.6.1 is suitable for human diagnostics, ERP-assisted gates, and automatically blocking a correctly bound Amazon `ERROR`. Mismatched old Preview errors, stale evidence, scope conflicts, and PATCH candidates without a current traceable snapshot fail closed instead of appearing to pass. User reports now show evidence stages separately, compare bound original evidence with an exact validated candidate when one exists, and use a neutral message when no candidate value was generated. Image URLs and technical metadata do not masquerade as observed image content.
 
 Unattended automatic release still requires a full Draft 2019-09 validator with Amazon vocabulary support, independent Preview rate limiting, an authorized submission workflow, and post-submission issue/status reconciliation in the integrating system. See the [official-source production research](docs/production-readiness-research.md) and [production integration guide](.agents/skills/amazon-listing-doctor/references/production-readiness.md).
 
-A fixed-seed, read-only run of 30 private Listings validated official-gate behavior. v1.6.0 additionally ran an unlabeled quality observation over 100 private North American and European Listings: deterministic reports and semantic merges completed, and the run exposed a repeatable evidence gap where image locator/technical metadata existed without an actual visual observation. Unlabeled observation proves behavior and degradation boundaries, not human-reviewed correctness; a Quality Golden Set is still being built. No private record, identifier, per-item reference, product text, or raw response is stored here.
+A fixed-seed, read-only run of 30 private Listings validated official-gate behavior. v1.6.0 additionally ran an unlabeled quality observation over 100 private North American and European Listings; v1.6.1 fixes the title-normalization omission and report-state conflation exposed by that run. Unlabeled observation proves behavior and degradation boundaries, not human-reviewed correctness; a Quality Golden Set is still being built. No private record, identifier, per-item reference, product text, or raw response is stored here.
 
 ## Developer CLI
 

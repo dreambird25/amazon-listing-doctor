@@ -24,7 +24,11 @@ from quality_contract import (
 )
 from quality_policy import EVIDENCE_POLICY_VERSION, evaluate_evidence_policy
 from cli_output import emit_utf8
-from summary_contract import official_action, primary_official_finding
+from summary_contract import (
+    derive_evidence_stages,
+    official_action,
+    primary_official_finding,
+)
 
 
 DIMENSIONS = (
@@ -852,7 +856,7 @@ def build_executive_summary(
         official_primary_action if official_blocker else quality_action or official_primary_action
     )
     summary = {
-        "summary_version": "1.3",
+        "summary_version": "1.4",
         "identity": {
             "marketplace_id": scope.get("marketplace_id"),
             "seller_sku": scope.get("sku"),
@@ -865,6 +869,7 @@ def build_executive_summary(
             "release_decision": official_report["release_decision"],
             "validation_completeness": official_report["official_validation_completeness"],
         },
+        "evidence_stages": derive_evidence_stages(official_report),
         "quality_verdict": verdict,
         "content_evidence": content_evidence,
         "evaluated_dimension_average": score,

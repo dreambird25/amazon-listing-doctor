@@ -781,7 +781,7 @@ class MergeReportTest(unittest.TestCase):
 
         self.assertTrue(valid)
         summary = merged["executive_summary"]
-        self.assertEqual("1.3", summary["summary_version"])
+        self.assertEqual("1.4", summary["summary_version"])
         self.assertEqual(
             "clarity_and_readability", summary["primary_reason"]["dimension"]
         )
@@ -796,6 +796,110 @@ class MergeReportTest(unittest.TestCase):
         self.assertEqual(
             "INCOMPLETE", summary["official_evidence"]["validation_completeness"]
         )
+
+    def test_evidence_stages_are_additive_and_do_not_change_official_gates(self):
+        report = self.official_report()
+        report["current_listing_gate"] = "NOT_EVALUATED"
+        report["candidate_preview_gate"] = "NOT_EVALUATED"
+        report["candidate_local_validation_gate"] = "NOT_EVALUATED"
+        report["release_decision"] = "NOT_EVALUATED"
+        report["release_reasons"] = ["CANDIDATE_PREVIEW_NOT_EVALUATED"]
+        report["official_validation_completeness"] = "INCOMPLETE"
+        report["official_evidence_coverage"] = {
+            "current_listing_snapshot": "COMPLETE",
+            "ptd_local_validation": "INCOMPLETE",
+            "candidate_preview": "INCOMPLETE",
+        }
+        report["content_contract"] = {"candidate_content_present": False}
+        report["findings"] = []
+        report["official_report_sha256"] = official_report_sha256(report)
+
+        merged, valid = MODULE.merge_report(report, self.assessment(report=report))
+
+        self.assertTrue(valid)
+        self.assertEqual("NOT_EVALUATED", merged["current_listing_gate"])
+        self.assertEqual("NOT_EVALUATED", merged["release_decision"])
+        self.assertEqual({
+            "current_snapshot": "COMPLETE",
+            "current_issues": "NO_KNOWN_ISSUES",
+            "ptd_local_validation": "NOT_COMPLETED",
+            "candidate_content": "NOT_PROVIDED",
+            "candidate_local_validation": "NOT_APPLICABLE_NO_CANDIDATE_CONTENT",
+            "candidate_preview": "NOT_APPLICABLE_NO_CANDIDATE_CONTENT",
+        }, merged["executive_summary"]["evidence_stages"])
+
+    def test_existing_preview_gate_is_preserved_without_candidate_content(self):
+        report = self.official_report()
+        report["content_contract"] = {"candidate_content_present": False}
+        report["candidate_preview_gate"] = "PASS"
+        report["candidate_local_validation_gate"] = "NOT_EVALUATED"
+        report["official_report_sha256"] = official_report_sha256(report)
+
+        merged, valid = MODULE.merge_report(report, self.assessment(report=report))
+
+        self.assertTrue(valid)
+        stages = merged["executive_summary"]["evidence_stages"]
+        self.assertEqual("PASS", stages["candidate_preview"])
+        self.assertEqual(
+            "NOT_APPLICABLE_NO_CANDIDATE_CONTENT",
+            stages["candidate_local_validation"],
+        )
+
+    def test_stale_preview_is_not_described_as_not_run(self):
+        report = self.official_report()
+        report["content_contract"] = {"candidate_content_present": False}
+        report["candidate_preview_gate"] = "NOT_EVALUATED"
+        report["findings"] = [{
+            "status": "NOT_EVALUATED",
+            "code": "PREVIEW_STALE",
+            "source": "VALIDATION_PREVIEW",
+            "applies_to_candidate": True,
+            "message": "The bound preview expired before this diagnostic run.",
+        }]
+        report["official_report_sha256"] = official_report_sha256(report)
+
+        merged, valid = MODULE.merge_report(report, self.assessment(report=report))
+
+        self.assertTrue(valid)
+        self.assertEqual(
+            "PROVIDED_NOT_USABLE",
+            merged["executive_summary"]["evidence_stages"]["candidate_preview"],
+        )
+
+    def test_evidence_stages_preserve_lightweight_ptd_validation(self):
+        report = self.official_report()
+        report["official_evidence_coverage"] = {
+            "current_listing_snapshot": "COMPLETE",
+            "ptd_local_validation": "EVALUATED_SUBSET",
+            "candidate_preview": "COMPLETE",
+        }
+        report["official_report_sha256"] = official_report_sha256(report)
+
+        merged, valid = MODULE.merge_report(report, self.assessment(report=report))
+
+        self.assertTrue(valid)
+        self.assertEqual(
+            "EVALUATED_SUBSET",
+            merged["executive_summary"]["evidence_stages"]["ptd_local_validation"],
+        )
+
+    def test_missing_or_unknown_stage_coverage_is_not_inferred_from_aggregate_gates(self):
+        report = self.official_report()
+        report["official_evidence_coverage"] = {
+            "ptd_local_validation": "COMPLETE",
+        }
+        report["official_validation_completeness"] = "COMPLETE"
+        report["current_listing_gate"] = "NO_KNOWN_OFFICIAL_ISSUES"
+        report["candidate_local_validation_gate"] = "PASS"
+        report["official_report_sha256"] = official_report_sha256(report)
+
+        merged, valid = MODULE.merge_report(report, self.assessment(report=report))
+
+        self.assertTrue(valid)
+        stages = merged["executive_summary"]["evidence_stages"]
+        self.assertEqual("UNKNOWN", stages["current_snapshot"])
+        self.assertEqual("NOT_CONFIRMED", stages["current_issues"])
+        self.assertEqual("UNKNOWN", stages["ptd_local_validation"])
 
     def test_nonapplicable_official_finding_is_not_primary(self):
         report = self.official_report()

@@ -4,7 +4,7 @@
 
 本项目基于 [`buluslan/amazon-listing-doctor`](https://github.com/buluslan/amazon-listing-doctor) 的 MIT 开源版本演进，现作为独立仓库维护。完整 Git 历史继续保留以追溯来源；原项目版权与许可声明保留在 [`LICENSE`](LICENSE)，修改与新增代码的归属说明见 [`NOTICE.md`](NOTICE.md)。仓库不包含任何特定公司的内部代码、接口、表结构、账号、SKU、ASIN 或运行配置。
 
-当前版本：**v1.6.0**。本版要求图片内容评分绑定实际画面观察，增加无标签的批量质量观察模式，并为核心 CLI 增加显式 UTF-8 文件输出，避免多语言报告经过 Shell 重定向后损坏。详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前版本：**v1.6.1**。本版将当前问题快照、PTD 校验、候选校验和发布判断拆成独立证据环节，并修正 Listings Items 标题归一化回退规则，避免把“未执行候选校验”误解成产品数据缺失。详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 它回答三个不同问题
 
@@ -59,11 +59,11 @@ https://github.com/dreambird25/amazon-listing-doctor/tree/main/.agents/skills/am
 
 ## 生产使用结论
 
-v1.6.0 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。默认报告分别展示内容质量原因/行动、原始值/候选值和官方证据原因/行动，并明确显示内容来自买家前台、卖家贡献还是其他输入范围；没有可靠候选时不会自动编造。图片 URL 与技术元数据不会再冒充画面内容证据。私有语义质检默认使用新鲜短上下文，数据采集仍由受控父环境完成。
+v1.6.1 可以安全用于人工诊断、ERP 辅助门禁，以及自动阻止已正确绑定的 Amazon `ERROR`。它会对旧 Payload 的 Preview ERROR、过期证据、范围不一致、PATCH 缺当前快照等情况安全降级，不会伪装成通过。默认报告分别展示内容质量原因/行动、原始值/候选值，以及当前问题快照、PTD、候选校验和发布判断；没有可靠候选时只说明本轮未生成，不再猜测原因。图片 URL 与技术元数据不会冒充画面内容证据。私有语义质检默认使用新鲜短上下文，数据采集仍由受控父环境完成。
 
 无人值守自动放行仍需由接入系统补齐：完整 Draft 2019-09 + Amazon vocabulary PTD 校验、Preview 独立限流、授权提交和提交后 issues/status 对账。Amazon 明确说明 Preview 适合少量 Listing，不是高吞吐生产主链路。官方依据见 [`生产就绪研究`](docs/production-readiness-research.md)，接入门禁见 [`production-readiness.md`](.agents/skills/amazon-listing-doctor/references/production-readiness.md)。
 
-官方门禁曾使用固定随机种子的 30 条私有只读 Listing 验证。v1.6.0 又使用 100 条北美与欧洲私有只读 Listing 完成无标签质量观察：确定性报告与语义合并均成功，并暴露出“只有图片定位/技术元数据、没有实际画面观察”的稳定证据缺口，因此收紧了图片 Evidence Policy。无标签观察只证明行为与降级边界，不等同人工正确性标签；真实人工 Quality Golden Set 仍在建设。公开仓库不保存任何私有记录、标识、单条引用、产品正文或原始响应。
+官方门禁曾使用固定随机种子的 30 条私有只读 Listing 验证。v1.6.0 使用 100 条北美与欧洲私有只读 Listing 完成无标签质量观察，v1.6.1 进一步修复该实践暴露的标题归一化遗漏与报告状态混写。无标签观察只证明行为与降级边界，不等同人工正确性标签；真实人工 Quality Golden Set 仍在建设。公开仓库不保存任何私有记录、标识、单条引用、产品正文或原始响应。
 
 示例输入位于 [`examples`](.agents/skills/amazon-listing-doctor/examples/README.md)。
 
@@ -118,13 +118,18 @@ ASIN：ASIN_PLACEHOLDER
 弱项维度：清晰度与可读性、图片信息覆盖
 内容质量原因：标题没有清楚表达已经验证的容量信息。
 内容优化行动：仅使用已绑定的 Listing 事实改善表达清晰度。
-建议改为：Example Brand Bottle, 24 oz
+原始值与候选值：标题｜Example Brand Bottle｜Example Brand Bottle, 24 oz
 
 Amazon 官方证据状态
-当前 Listing：未评估
+当前问题快照：已获取
+当前快照问题：未发现已知问题
+PTD 本地校验：已执行轻量子集校验
+候选内容：已提供
+候选本地校验：已通过
+候选官方预检：本轮未完成
 发布决策：发布条件未评估
 官方证据完整性：未完成
-说明：官方证据未完成只表示尚不能确认 Amazon 当前状态，不代表 Listing 内容不完整。
+说明：至少一个独立校验环节尚未完成，请以上述各环节为准；这不代表当前问题快照未获取，也不代表 Listing 内容不完整。
 ```
 
 评分规则固定为 `STRONG=10`、`ADEQUATE=7`、`WEAK=3`，只对已评估维度求平均并保留一位小数；七维齐全为 `FULL/structurally_comparable=true`，五或六维为 `PARTIAL`，少于五维为 `NOT_SCORED`。两个分数只有在同为 `FULL` 且 `comparison_cohort_sha256` 一致时才允许比较；单份报告不自称“已可比”。高平均分不会隐藏 `WEAK` 维度。建议优先级必须匹配评级：`WEAK` 只允许 HIGH/MEDIUM，`ADEQUATE` 只允许 MEDIUM/LOW，`STRONG` 最多 LOW；`NOT_EVALUATED` 只能请求补充证据。适用于当前 Listing 或候选的 `OFFICIAL_ERROR` 仍是操作阻断项；普通官方警告、未评估和证据异常在独立官方证据区展示，不再替代内容质量原因。语义评估必须绑定目标内容、Locale、时间与官方报告哈希，且每个维度满足对应证据政策。默认简洁行动由维度映射为稳定 code，不直接展示可能带未绑定事实的自由模型文案。精确改写只能使用已绑定原始标量值以及空格、逗号、短横线、长横线、斜杠、冒号和圆括号；每个事实默认恰好使用一次，容量单位等事实也必须单独绑定。

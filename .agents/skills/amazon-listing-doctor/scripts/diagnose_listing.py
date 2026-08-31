@@ -1741,7 +1741,7 @@ def diagnose(data: Any) -> dict[str, Any]:
     report["data_as_of"] = data_as_of
     report["listing_snapshot"] = listing_snapshot
     report["ptd_validation_coverage"] = ptd_validation_coverage
-    report["report_locale"] = str(data.get("report_locale") or "en")
+    report["report_locale"] = str(data.get("report_locale") or "zh-CN")
     report["content_contract"] = {
         "mode": content_contract_mode,
         "evaluated_target": validation_target,

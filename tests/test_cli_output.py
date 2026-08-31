@@ -49,7 +49,7 @@ class CliOutputTest(unittest.TestCase):
             )
             self.run_cli(
                 str(ROOT / "scripts" / "render_report.py"),
-                "--report", str(merged), "--lang", "zh-CN",
+                "--report", str(merged),
                 "--format", "markdown", "--output", str(markdown),
             )
 

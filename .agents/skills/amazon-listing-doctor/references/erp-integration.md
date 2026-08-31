@@ -34,6 +34,7 @@ After collection, hand the normalized file to an isolated semantic worker as des
 - Populate `current_content_evidence` and optional `candidate.content_evidence`. Use `LISTINGS_ITEMS + SELLER_CONTRIBUTION` for Listings Items attributes, `CATALOG_ITEMS + SUPPLIED_CONTENT` for catalog context, and `STOREFRONT_OBSERVATION + BUYER_VISIBLE` only for an actual scoped storefront observation.
 - A partial API projection, a browser page that did not finish loading, or an adapter that selected only some fields must use `coverage=PARTIAL|UNKNOWN` and `missing_field_semantics=UNKNOWN`. Do not turn omitted data into a missing-content defect.
 - Preserve complete Amazon attribute arrays with `language_tag` and `marketplace_id`. Declare source-to-PTD names in `attribute_aliases`; do not hide alias rules inside adapter code.
+- For the normalized title, select scoped `attributes.item_name[].value` first. If that value is absent, an adapter may use `summaries[].itemName` only from the exact requested `marketplaceId`. Do not fall back to an arbitrary first summary, do not cross Marketplaces, and do not insert the summary value into the attributes object. This remains Listings Items Seller Listing evidence, not buyer-visible storefront proof.
 - Do not combine attributes from different marketplaces or sellers into one diagnostic object.
 - Mark delayed, partial, or stale snapshots explicitly. Do not silently promote cached data to current evidence.
 

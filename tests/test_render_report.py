@@ -226,7 +226,7 @@ class RenderReportTest(unittest.TestCase):
 
     def test_markdown_keeps_stable_codes_and_original_message(self):
         markdown = MODULE.render_markdown(self.report(), "zh-CN", "detailed")
-        self.assertIn("当前 Listing", markdown)
+        self.assertIn("当前问题快照", markdown)
         self.assertNotIn("Current Listing:", markdown)
         self.assertIn("PTD_CONSTRAINT_VIOLATION", markdown)
         self.assertIn("Amazon/引擎原始信息", markdown)
@@ -249,7 +249,101 @@ class RenderReportTest(unittest.TestCase):
             "official_report_sha256"
         ]
         markdown = MODULE.render_markdown(report, "zh-CN")
-        self.assertIn("暂未生成候选值（需先补证据或人工确认）", markdown)
+        self.assertIn("本轮未生成候选值", markdown)
+        self.assertNotIn("需先补证据或人工确认", markdown)
+
+    def test_chinese_concise_report_replaces_foreign_language_quality_reason(self):
+        report = self.report()
+        report["semantic_assessment"]["dimensions"]["clarity_and_readability"][
+            "rationale"
+        ] = "The title is difficult to scan."
+
+        markdown = MODULE.render_markdown(report, "zh-CN")
+
+        self.assertIn("所评估标题、要点或描述的表达影响快速理解与阅读。", markdown)
+        self.assertNotIn("The title is difficult to scan.", markdown)
+
+    def test_chinese_concise_report_rejects_token_chinese_prefix_on_english_reason(self):
+        report = self.report()
+        report["semantic_assessment"]["dimensions"]["clarity_and_readability"][
+            "rationale"
+        ] = "标题: The title is difficult to scan and repeats many English phrases."
+
+        markdown = MODULE.render_markdown(report, "zh-CN")
+
+        self.assertIn("所评估标题、要点或描述的表达影响快速理解与阅读。", markdown)
+        self.assertNotIn("The title is difficult to scan", markdown)
+
+    def test_official_stage_table_separates_snapshot_from_missing_ptd_and_preview(self):
+        report = self.report()
+        report["current_listing_gate"] = "NOT_EVALUATED"
+        report["candidate_preview_gate"] = "NOT_EVALUATED"
+        report["candidate_local_validation_gate"] = "NOT_EVALUATED"
+        report["release_decision"] = "NOT_EVALUATED"
+        report["release_reasons"] = ["CANDIDATE_PREVIEW_NOT_EVALUATED"]
+        report["official_validation_completeness"] = "INCOMPLETE"
+        report["official_evidence_coverage"] = {
+            "current_listing_snapshot": "COMPLETE",
+            "ptd_local_validation": "INCOMPLETE",
+            "candidate_preview": "INCOMPLETE",
+        }
+        report["listing_snapshot"] = {
+            "request_id": "REQUEST_ID",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "expires_at": "2026-01-01T00:10:00Z",
+            "included_data": ["summaries", "attributes", "issues"],
+            "issue_count": 0,
+        }
+        report["content_contract"] = {
+            "candidate_content_present": False,
+        }
+        report["findings"] = [
+            {
+                "status": "NOT_EVALUATED",
+                "code": "PTD_MISSING",
+                "source": "PTD",
+                "applies_to_current": True,
+                "message": "PTD evidence was not supplied.",
+            },
+            {
+                "status": "NOT_EVALUATED",
+                "code": "VALIDATION_PREVIEW_NOT_RUN",
+                "source": "VALIDATION_PREVIEW",
+                "applies_to_candidate": True,
+                "message": "Validation Preview was not run.",
+            },
+        ]
+        report["official_report_sha256"] = official_report_sha256(report)
+        report["semantic_assessment"]["official_report_sha256"] = report[
+            "official_report_sha256"
+        ]
+
+        markdown = MODULE.render_markdown(report, "zh-CN")
+
+        self.assertIn("| 当前问题快照 | 已获取 |", markdown)
+        self.assertIn("| 当前快照问题 | 未发现已知问题 |", markdown)
+        self.assertIn("| PTD 本地校验 | 本轮未完成 |", markdown)
+        self.assertIn("| 候选内容 | 未提供可评估内容 |", markdown)
+        self.assertIn("| 候选本地校验 | 未执行（无候选内容） |", markdown)
+        self.assertIn("| 候选官方预检 | 未执行（无候选内容） |", markdown)
+        self.assertIn("不代表当前问题快照未获取", markdown)
+        self.assertNotIn("当前 Listing: 未评估", markdown)
+
+    def test_official_stage_table_names_full_schema_validation(self):
+        report = self.report()
+        report["official_evidence_coverage"] = {
+            "current_listing_snapshot": "COMPLETE",
+            "ptd_local_validation": "FULL_JSON_SCHEMA",
+            "candidate_preview": "COMPLETE",
+        }
+        report["official_report_sha256"] = official_report_sha256(report)
+        report["semantic_assessment"]["official_report_sha256"] = report[
+            "official_report_sha256"
+        ]
+
+        markdown = MODULE.render_markdown(report, "zh-CN")
+
+        self.assertIn("| PTD 本地校验 | 已完成完整 Schema 校验 |", markdown)
 
     def test_default_markdown_is_concise_operational_summary(self):
         markdown = MODULE.render_markdown(self.report(), "zh-CN")
@@ -264,7 +358,7 @@ class RenderReportTest(unittest.TestCase):
         self.assertIn("内容质量", markdown)
         self.assertIn("Amazon 官方证据状态", markdown)
         self.assertIn("官方证据完整性", markdown)
-        self.assertIn("官方证据完整性: 已完成", markdown)
+        self.assertIn("| 官方证据完整性 | 已完成 |", markdown)
         self.assertIn("标题没有清楚表达", markdown)
         self.assertIn("仅使用已绑定的 Listing 事实", markdown)
         self.assertIn("Example Brand Bottle, 24 oz", markdown)
@@ -279,7 +373,7 @@ class RenderReportTest(unittest.TestCase):
             self.assertNotIn(f"`{machine_value}`", markdown)
         self.assertIn("内容质量结论: 需要优化", markdown)
         self.assertIn("评分覆盖状态: 完整七维评分", markdown)
-        self.assertIn("当前 Listing: 未发现已知官方问题", markdown)
+        self.assertIn("| 当前快照问题 | 尚未确认 |", markdown)
 
     def test_official_gap_is_separate_from_content_quality(self):
         report = self.report()
@@ -418,7 +512,7 @@ class RenderReportTest(unittest.TestCase):
             "official_report_sha256"
         ]
         markdown = MODULE.render_markdown(report, "zh-CN")
-        self.assertIn("候选预检: 候选预检通过", markdown)
+        self.assertIn("| 候选官方预检 | 已通过 |", markdown)
         self.assertIn("无需仅因这个历史问题继续修改已通过该预检的候选字段", markdown)
         self.assertIn("其他候选校验仍需单独处理", markdown)
         self.assertIn("重新获取当前 Listing 问题", markdown)

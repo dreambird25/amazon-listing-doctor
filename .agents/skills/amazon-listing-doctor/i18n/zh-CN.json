@@ -17,7 +17,7 @@
   },
   "fields": {
     "current_listing": "当前 Listing",
-    "candidate_preview": "候选预检",
+    "candidate_preview": "候选官方预检",
     "candidate_local_validation": "候选本地校验",
     "release_decision": "发布决策",
     "official_validation_completeness": "官方证据完整性",
@@ -39,12 +39,18 @@
     "content_primary_action": "内容优化行动",
     "official_primary_reason": "官方状态原因",
     "official_primary_action": "官方证据行动",
-    "official_incomplete_note": "官方证据未完成只表示尚不能确认 Amazon 当前状态，不代表 Listing 内容不完整。",
+    "official_incomplete_note": "官方证据未完成只表示至少一个独立校验环节尚未完成；请以上表各环节为准，不代表当前问题快照未获取，也不代表 Listing 内容不完整。",
     "suggested_value": "建议改为",
     "target_field": "目标字段",
     "original_value": "原始值",
     "candidate_value": "候选值",
-    "candidate_not_generated": "暂未生成候选值（需先补证据或人工确认）",
+    "candidate_not_generated": "本轮未生成候选值",
+    "evidence_stage": "证据环节",
+    "candidate_content": "候选内容",
+    "current_snapshot": "当前问题快照",
+    "current_snapshot_issues": "当前快照问题",
+    "ptd_local_validation": "PTD 本地校验",
+    "unknown": "状态未确认",
     "completion_criterion": "完成标准",
     "score_disclaimer": "内部启发式评分，非 Amazon 官方评分",
     "not_scored": "未评分",
@@ -72,6 +78,26 @@
     "evidence_policy": "证据政策",
     "limitations": "限制",
     "none": "无"
+  },
+  "evidence_stage_labels": {
+    "COMPLETE": "已获取",
+    "INCOMPLETE": "未完整获取",
+    "BLOCKERS_PRESENT": "发现阻断问题",
+    "REVIEW_PRESENT": "发现需复核问题",
+    "EVIDENCE_ERROR": "快照证据异常",
+    "NO_KNOWN_ISSUES": "未发现已知问题",
+    "NOT_CONFIRMED": "尚未确认",
+    "NOT_COMPLETED": "本轮未完成",
+    "EVALUATED_SUBSET": "已执行轻量子集校验",
+    "PROVIDED": "已提供",
+    "NOT_PROVIDED": "未提供可评估内容",
+    "NOT_APPLICABLE_NO_CANDIDATE_CONTENT": "未执行（无候选内容）",
+    "PROVIDED_NOT_USABLE": "已提供，但当前不可用于判断",
+    "FULL_JSON_SCHEMA": "已完成完整 Schema 校验",
+    "PASS": "已通过",
+    "BLOCK": "未通过",
+    "REVIEW": "需要人工复核",
+    "UNKNOWN": "状态未确认"
   },
   "validation_completeness_labels": {
     "COMPLETE": "已完成",
@@ -124,6 +150,21 @@
     "NEEDS_IMPROVEMENT": "需要优化",
     "PARTIALLY_EVALUATED": "部分评估",
     "NOT_EVALUATED": "未评估"
+  },
+  "quality_reason_fallbacks": {
+    "content_completeness": "所评估内容的完整度存在不足，需要结合已绑定原始值补齐买家决策信息。",
+    "clarity_and_readability": "所评估标题、要点或描述的表达影响快速理解与阅读。",
+    "intent_coverage": "所评估内容对产品用途、适用场景或购买意图的覆盖不足。",
+    "buyer_question_coverage": "所评估内容没有充分回答买家在购买前需要确认的关键信息。",
+    "image_information_coverage": "所评估图片证据不足以完整展示产品信息。",
+    "cross_field_consistency": "所评估标题、要点、描述或属性之间存在需要核对的一致性问题。",
+    "localization_quality": "所评估文本不够符合目标站点的语言表达习惯。"
+  },
+  "quality_rating_reason_fallbacks": {
+    "STRONG": "已绑定证据支持所评估内容在该维度表现良好。",
+    "ADEQUATE": "已绑定证据支持该维度基本合格，但仍有可优化空间。",
+    "WEAK": "已绑定证据表明该维度需要优化。",
+    "NOT_EVALUATED": "该维度缺少可验证证据，本轮未评估。"
   },
   "action_codes": {
     "FIX_OFFICIAL_BLOCKER_AND_REVALIDATE": "先修复上述 Amazon 官方错误，再重新运行完整校验。",

@@ -699,6 +699,10 @@ class DiagnoseListingTest(unittest.TestCase):
         self.assertEqual("de_DE", report["scope"]["locale"])
         self.assertEqual("zh-CN", report["report_locale"])
 
+    def test_report_locale_defaults_to_chinese(self):
+        report = MODULE.diagnose(self.base())
+        self.assertEqual("zh-CN", report["report_locale"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,6 +34,87 @@ LOCAL_VALIDATION_REASONS = {
 }
 
 
+def derive_evidence_stages(official_report: dict[str, Any]) -> dict[str, str]:
+    """Describe evidence acquisition stages without changing canonical gates."""
+    coverage = official_report.get("official_evidence_coverage")
+    coverage = coverage if isinstance(coverage, dict) else {}
+
+    snapshot_coverage = coverage.get("current_listing_snapshot")
+    if snapshot_coverage == "COMPLETE":
+        current_snapshot = "COMPLETE"
+    elif snapshot_coverage == "INCOMPLETE":
+        current_snapshot = "INCOMPLETE"
+    else:
+        current_snapshot = "UNKNOWN"
+
+    current_findings = [
+        row for row in official_report.get("findings", [])
+        if isinstance(row, dict)
+        and row.get("source") == "LISTINGS_ITEMS"
+        and row.get("applies_to_current") is not False
+    ]
+    if any(row.get("status") == "OFFICIAL_ERROR" for row in current_findings):
+        current_issues = "BLOCKERS_PRESENT"
+    elif any(row.get("status") == "OFFICIAL_WARNING" for row in current_findings):
+        current_issues = "REVIEW_PRESENT"
+    elif any(row.get("status") == "SYSTEM_ERROR" for row in current_findings):
+        current_issues = "EVIDENCE_ERROR"
+    elif current_snapshot == "COMPLETE":
+        current_issues = "NO_KNOWN_ISSUES"
+    else:
+        current_issues = "NOT_CONFIRMED"
+
+    ptd_coverage = coverage.get("ptd_local_validation")
+    if ptd_coverage == "FULL_JSON_SCHEMA":
+        ptd_validation = "FULL_JSON_SCHEMA"
+    elif ptd_coverage == "EVALUATED_SUBSET":
+        ptd_validation = "EVALUATED_SUBSET"
+    elif ptd_coverage == "INCOMPLETE":
+        ptd_validation = "NOT_COMPLETED"
+    else:
+        ptd_validation = "UNKNOWN"
+
+    contract = official_report.get("content_contract")
+    candidate_present = contract.get("candidate_content_present") \
+        if isinstance(contract, dict) else None
+    if candidate_present is True:
+        candidate_content = "PROVIDED"
+    elif candidate_present is False:
+        candidate_content = "NOT_PROVIDED"
+    else:
+        candidate_content = "UNKNOWN"
+
+    def candidate_stage(gate: Any) -> str:
+        if gate in {"PASS", "BLOCK", "REVIEW", "UNKNOWN"}:
+            return str(gate)
+        if gate == "NOT_EVALUATED":
+            if candidate_content == "NOT_PROVIDED":
+                return "NOT_APPLICABLE_NO_CANDIDATE_CONTENT"
+            return "NOT_COMPLETED"
+        return "UNKNOWN"
+
+    preview_stage = candidate_stage(official_report.get("candidate_preview_gate"))
+    if official_report.get("candidate_preview_gate") == "NOT_EVALUATED":
+        preview_codes = {
+            str(row.get("code") or "")
+            for row in official_report.get("findings", [])
+            if isinstance(row, dict) and row.get("source") == "VALIDATION_PREVIEW"
+        }
+        if preview_codes - {"VALIDATION_PREVIEW_NOT_RUN"}:
+            preview_stage = "PROVIDED_NOT_USABLE"
+
+    return {
+        "current_snapshot": current_snapshot,
+        "current_issues": current_issues,
+        "ptd_local_validation": ptd_validation,
+        "candidate_content": candidate_content,
+        "candidate_local_validation": candidate_stage(
+            official_report.get("candidate_local_validation_gate")
+        ),
+        "candidate_preview": preview_stage,
+    }
+
+
 def primary_official_finding(official_report: dict[str, Any]) -> dict[str, Any] | None:
     release_decision = official_report.get("release_decision")
     status_order = {

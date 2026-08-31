@@ -21,7 +21,11 @@ from merge_report import (
     validate_assessment,
 )
 from quality_policy import evaluate_evidence_policy
-from summary_contract import official_action, primary_official_finding
+from summary_contract import (
+    derive_evidence_stages,
+    official_action,
+    primary_official_finding,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +52,13 @@ def markdown_cell(value: Any) -> str:
         text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace("|", "\\|").replace("\r\n", "<br>").replace("\n", "<br>")
     )
+
+
+def is_chinese_conclusion(value: Any) -> bool:
+    text = str(value or "")
+    han_count = sum("\u3400" <= char <= "\u9fff" for char in text)
+    latin_count = sum(char.isascii() and char.isalpha() for char in text)
+    return han_count >= 6 and han_count / max(han_count + latin_count, 1) >= 0.2
 
 
 def evidence_values(
@@ -131,7 +142,7 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
         "content_coverage": content_evidence.get("coverage"),
     }
     result = {
-        "summary_version": "1.3",
+        "summary_version": "1.4",
         "identity": {
             "marketplace_id": scope.get("marketplace_id"),
             "seller_sku": scope.get("sku"),
@@ -144,6 +155,7 @@ def fallback_executive_summary(report: dict[str, Any]) -> dict[str, Any]:
             "release_decision": report.get("release_decision"),
             "validation_completeness": report.get("official_validation_completeness"),
         },
+        "evidence_stages": derive_evidence_stages(report),
         "quality_verdict": "NOT_EVALUATED",
         "content_evidence": content_evidence,
         "evaluated_dimension_average": score,
@@ -209,12 +221,22 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
     official_reason = summary.get("official_primary_reason") or {}
     official_primary_action = summary.get("official_primary_action") or {}
     change_preview = summary.get("change_preview") or {}
+    evidence_stages = summary.get("evidence_stages") or derive_evidence_stages(report)
 
     def reason_text(value: dict[str, Any], fallback: str) -> str:
         result = str(value.get("text") or fallback)
         if value.get("source") == "OFFICIAL_EVIDENCE" and locale == "zh-CN":
             result = str(
                 messages.get("code_titles", {}).get(str(value.get("code") or "")) or result
+            )
+        elif locale == "zh-CN" and value.get("dimension") and not is_chinese_conclusion(result):
+            fallback_group = "quality_reason_fallbacks" \
+                if value.get("rating") == "WEAK" else "quality_rating_reason_fallbacks"
+            fallback_key = value.get("dimension") \
+                if value.get("rating") == "WEAK" else value.get("rating")
+            result = str(
+                messages.get(fallback_group, {}).get(str(fallback_key or ""))
+                or messages["fields"]["no_reason"]
             )
         return result
 
@@ -266,6 +288,10 @@ def concise_report(report: dict[str, Any], locale: str) -> dict[str, Any]:
                 if change_preview.get("candidate_available")
                 else messages["fields"]["candidate_not_generated"]
             ),
+            "evidence_stages": {
+                key: label(messages, "evidence_stage_labels", value)
+                for key, value in evidence_stages.items()
+            },
         },
     }
 
@@ -282,6 +308,7 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
     official_reason = summary.get("official_primary_reason") or {}
     official_primary_action = summary.get("official_primary_action") or {}
     change_preview = summary.get("change_preview") or {}
+    evidence_stages = display.get("evidence_stages") or {}
     identity = summary.get("identity") or {}
     weak_dimensions = score.get("weak_dimensions") or []
     weak_display = ", ".join(
@@ -334,19 +361,16 @@ def render_concise_markdown(report: dict[str, Any], locale: str) -> str:
         "",
         f"## {headings['official_evidence']}",
         "",
-        f"- {fields['current_listing']}: {display['current_listing_gate']}",
-    ])
-    if report.get("release_decision") != "PASS" \
-            or report.get("candidate_preview_gate") != "PASS" \
-            or report.get("candidate_local_validation_gate") != "PASS":
-        lines.extend([
-            f"- {fields['candidate_preview']}: {display['candidate_preview_gate']}",
-            f"- {fields['candidate_local_validation']}: {display['candidate_local_validation_gate']}",
-        ])
-    lines.extend([
-        f"- {fields['release_decision']}: {display['release_decision']}",
-        f"- {fields['official_validation_completeness']}: "
-        f"{display['official_validation_completeness']}",
+        f"| {fields['evidence_stage']} | {fields['status']} |",
+        "|---|---|",
+        f"| {fields['current_snapshot']} | {evidence_stages.get('current_snapshot', fields['unknown'])} |",
+        f"| {fields['current_snapshot_issues']} | {evidence_stages.get('current_issues', fields['unknown'])} |",
+        f"| {fields['ptd_local_validation']} | {evidence_stages.get('ptd_local_validation', fields['unknown'])} |",
+        f"| {fields['candidate_content']} | {evidence_stages.get('candidate_content', fields['unknown'])} |",
+        f"| {fields['candidate_local_validation']} | {evidence_stages.get('candidate_local_validation', fields['unknown'])} |",
+        f"| {fields['candidate_preview']} | {evidence_stages.get('candidate_preview', fields['unknown'])} |",
+        f"| {fields['release_decision']} | {display['release_decision']} |",
+        f"| {fields['official_validation_completeness']} | {display['official_validation_completeness']} |",
     ])
     if report.get("official_validation_completeness") != "COMPLETE":
         lines.extend(["", f"> {fields['official_incomplete_note']}"])
@@ -547,7 +571,7 @@ def main() -> int:
     args = parse_args()
     try:
         report = json.loads(args.report.read_text(encoding="utf-8"))
-        locale = args.lang or str(report.get("report_locale") or "en")
+        locale = args.lang or str(report.get("report_locale") or "zh-CN")
         output = (
             concise_report(report, locale) if args.format == "json" and args.view == "concise"
             else validated_detailed_report(report, locale) if args.format == "json"
